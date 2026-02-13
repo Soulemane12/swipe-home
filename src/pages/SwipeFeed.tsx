@@ -9,7 +9,7 @@ import { mockListings, type CommuteMode, type Listing } from "@/data/mockData";
 const SwipeFeed = () => {
   const navigate = useNavigate();
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [commuteMode, setCommuteMode] = useState<CommuteMode>("transit");
+  const [commuteModes, setCommuteModes] = useState<CommuteMode[]>(["transit"]);
   const [savedListings, setSavedListings] = useState<Listing[]>([]);
 
   // Store saved listings in sessionStorage for the saved page
@@ -39,7 +39,7 @@ const SwipeFeed = () => {
           </div>
           <span className="font-bold text-foreground">HomeSwipe</span>
         </div>
-        <ModeToggle mode={commuteMode} onChange={setCommuteMode} />
+        <ModeToggle modes={commuteModes} onChange={setCommuteModes} />
         <button
           onClick={() => navigate("/saved")}
           className="relative w-8 h-8 rounded-full bg-secondary flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"

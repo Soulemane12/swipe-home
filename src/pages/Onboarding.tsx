@@ -18,7 +18,7 @@ const Onboarding = () => {
   const [places, setPlaces] = useState<Place[]>([
     { id: "1", label: "Work", address: "", importance: "high" },
   ]);
-  const [commuteMode, setCommuteMode] = useState<CommuteMode>("transit");
+  const [commuteModes, setCommuteModes] = useState<CommuteMode[]>(["transit"]);
 
   const canContinue = step === 1 ? places.length > 0 && places.some((p) => p.address.trim()) : true;
 
@@ -47,14 +47,14 @@ const Onboarding = () => {
           <p className="text-sm text-muted-foreground mb-6">
             {step === 1
               ? "Add places you commute to. We'll find homes that fit your life."
-              : "Choose your main commute mode for accurate travel times."}
+              : "Choose your commute modes for accurate travel times. You can pick multiple."}
           </p>
 
           {step === 1 ? (
             <SavedPlaceForm places={places} onChange={setPlaces} />
           ) : (
             <div className="flex justify-center py-8">
-              <ModeToggle mode={commuteMode} onChange={setCommuteMode} />
+              <ModeToggle modes={commuteModes} onChange={setCommuteModes} />
             </div>
           )}
 
