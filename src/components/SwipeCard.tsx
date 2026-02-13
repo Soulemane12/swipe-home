@@ -1,4 +1,5 @@
-import { motion, useMotionValue, useTransform, PanInfo } from "framer-motion";
+import { useState } from "react";
+import { motion, useMotionValue, useTransform, useAnimate, PanInfo } from "framer-motion";
 import { Heart, X } from "lucide-react";
 import CommuteChip from "./CommuteChip";
 import TradeoffBanner from "./TradeoffBanner";
@@ -12,6 +13,7 @@ interface SwipeCardProps {
 }
 
 const SwipeCard = ({ listing, onSwipe, isTop }: SwipeCardProps) => {
+  const [scope, animate] = useAnimate();
   const x = useMotionValue(0);
   const rotate = useTransform(x, [-300, 300], [-15, 15]);
   const opacity = useTransform(x, [-300, -100, 0, 100, 300], [0.5, 1, 1, 1, 0.5]);
@@ -20,14 +22,22 @@ const SwipeCard = ({ listing, onSwipe, isTop }: SwipeCardProps) => {
 
   const handleDragEnd = (_: any, info: PanInfo) => {
     if (info.offset.x > 120) {
-      onSwipe("right");
+      animateOut("right");
     } else if (info.offset.x < -120) {
-      onSwipe("left");
+      animateOut("left");
     }
+  };
+
+  const animateOut = async (direction: "left" | "right") => {
+    const xTarget = direction === "right" ? 500 : -500;
+    const rotateTarget = direction === "right" ? 20 : -20;
+    await animate(scope.current, { x: xTarget, rotate: rotateTarget, opacity: 0 }, { duration: 0.35, ease: "easeOut" });
+    onSwipe(direction);
   };
 
   return (
     <motion.div
+      ref={scope}
       className={`absolute inset-0 ${isTop ? "z-10 cursor-grab active:cursor-grabbing" : "z-0"}`}
       style={isTop ? { x, rotate, opacity } : { scale: 0.95, y: 8, opacity: 0.6 }}
       drag={isTop ? "x" : false}
@@ -108,13 +118,13 @@ const SwipeCard = ({ listing, onSwipe, isTop }: SwipeCardProps) => {
         {isTop && (
           <div className="flex justify-center gap-6 p-4 pt-0">
             <button
-              onClick={() => onSwipe("left")}
+              onClick={() => animateOut("left")}
               className="w-14 h-14 rounded-full border-2 border-destructive text-destructive flex items-center justify-center hover:bg-destructive hover:text-destructive-foreground transition-colors active:scale-95"
             >
               <X className="w-6 h-6" />
             </button>
             <button
-              onClick={() => onSwipe("right")}
+              onClick={() => animateOut("right")}
               className="w-14 h-14 rounded-full border-2 border-success text-success flex items-center justify-center hover:bg-success hover:text-success-foreground transition-colors active:scale-95"
             >
               <Heart className="w-6 h-6" />
