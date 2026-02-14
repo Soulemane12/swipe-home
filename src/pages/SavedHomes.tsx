@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { Home, ArrowLeft, ArrowUpDown, Map, List } from "lucide-react";
+import { Home, ArrowLeft, ArrowUpDown } from "lucide-react";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 import type { Listing } from "@/data/listingTypes";
@@ -8,7 +8,6 @@ import type { Listing } from "@/data/listingTypes";
 mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN;
 
 type SortBy = "match" | "price" | "commute";
-type ViewMode = "list" | "map";
 
 interface SavedPlace {
   id: string;
@@ -74,7 +73,6 @@ const SavedHomes = () => {
   const navigate = useNavigate();
   const [listings, setListings] = useState<Listing[]>([]);
   const [sortBy, setSortBy] = useState<SortBy>("match");
-  const [viewMode, setViewMode] = useState<ViewMode>("map");
   const [geocodedPlaces, setGeocodedPlaces] = useState<GeocodedPlace[]>([]);
   const mapContainer = useRef<HTMLDivElement>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
@@ -108,7 +106,7 @@ const SavedHomes = () => {
 
   // Initialize and update map
   useEffect(() => {
-    if (viewMode !== "map" || !mapContainer.current) return;
+    if (!mapContainer.current) return;
     if (listings.length === 0 && geocodedPlaces.length === 0) return;
 
     // Clean up previous map
@@ -222,7 +220,7 @@ const SavedHomes = () => {
         mapRef.current = null;
       }
     };
-  }, [viewMode, listings, geocodedPlaces]);
+  }, [listings, geocodedPlaces]);
 
   const sorted = [...listings].sort((a, b) => {
     if (sortBy === "match") return b.matchScore - a.matchScore;
@@ -253,31 +251,6 @@ const SavedHomes = () => {
           </div>
           <span className="font-bold text-foreground">Saved Homes</span>
         </div>
-        {/* View toggle */}
-        {listings.length > 0 && (
-          <div className="flex gap-1 bg-secondary rounded-lg p-0.5">
-            <button
-              onClick={() => setViewMode("map")}
-              className={`p-1.5 rounded-md transition-all ${
-                viewMode === "map"
-                  ? "bg-primary text-primary-foreground"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              <Map className="w-4 h-4" />
-            </button>
-            <button
-              onClick={() => setViewMode("list")}
-              className={`p-1.5 rounded-md transition-all ${
-                viewMode === "list"
-                  ? "bg-primary text-primary-foreground"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              <List className="w-4 h-4" />
-            </button>
-          </div>
-        )}
       </header>
 
       {listings.length === 0 ? (
@@ -291,68 +264,72 @@ const SavedHomes = () => {
           </button>
         </div>
       ) : (
-        <>
-          {/* Map view */}
-          {viewMode === "map" && (
-            <div
-              ref={mapContainer}
-              className="w-full h-[50vh] min-h-[300px]"
-            />
-          )}
+        <div className="flex-1 relative">
+          {/* Fullscreen map */}
+          <div
+            ref={mapContainer}
+            className="absolute inset-0 w-full h-full"
+          />
 
-          {/* List section */}
-          <div className="max-w-2xl mx-auto p-4 w-full">
-            {/* Sort bar */}
-            <div className="flex items-center gap-2 mb-4">
-              <ArrowUpDown className="w-4 h-4 text-muted-foreground" />
-              {(["match", "price", "commute"] as SortBy[]).map((s) => (
-                <button
-                  key={s}
-                  onClick={() => setSortBy(s)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-medium capitalize transition-all ${
-                    sortBy === s
-                      ? "bg-primary text-primary-foreground"
-                      : "bg-secondary text-muted-foreground hover:text-foreground"
-                  }`}
-                >
-                  {s === "match" ? "Best match" : s === "price" ? "Lowest price" : "Shortest commute"}
-                </button>
-              ))}
+          {/* Floating list panel */}
+          <div className="absolute bottom-0 left-0 right-0 z-10 max-h-[45vh] flex flex-col">
+            {/* Drag handle + sort bar */}
+            <div className="bg-card/95 backdrop-blur-md rounded-t-2xl border-t border-x border-border shadow-[0_-4px_20px_rgba(0,0,0,0.1)] px-4 pt-3 pb-2">
+              <div className="w-10 h-1 rounded-full bg-muted-foreground/30 mx-auto mb-3" />
+              <div className="flex items-center gap-2">
+                <ArrowUpDown className="w-3.5 h-3.5 text-muted-foreground" />
+                {(["match", "price", "commute"] as SortBy[]).map((s) => (
+                  <button
+                    key={s}
+                    onClick={() => setSortBy(s)}
+                    className={`px-2.5 py-1 rounded-lg text-[11px] font-medium capitalize transition-all ${
+                      sortBy === s
+                        ? "bg-primary text-primary-foreground"
+                        : "bg-secondary text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    {s === "match" ? "Best match" : s === "price" ? "Lowest price" : "Shortest commute"}
+                  </button>
+                ))}
+              </div>
             </div>
 
-            <div className="grid gap-3">
-              {sorted.map((listing) => (
-                <div
-                  key={listing.id}
-                  className="flex gap-3 p-3 rounded-2xl bg-card card-shadow border border-border animate-fade-in"
-                >
-                  <SavedHomeThumb image={listing.image} alt={listing.neighborhood} />
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-baseline gap-1.5">
-                      <span className="text-lg font-bold text-foreground">
-                        ${listing.price.toLocaleString()}
-                      </span>
-                      <span className="text-xs text-muted-foreground">
-                        {listing.priceType === "rent" ? "/mo" : ""}
-                      </span>
-                    </div>
-                    <p className="text-sm text-muted-foreground truncate">
-                      {listing.beds}bd · {listing.baths}ba · {listing.neighborhood}
-                    </p>
-                    <div className="flex items-center gap-3 mt-2">
-                      <span className="text-xs text-muted-foreground">
-                        ~{avgCommute(listing)}m avg commute
-                      </span>
-                      <span className="text-xs font-semibold text-primary">
-                        {listing.matchScore}% match
-                      </span>
+            {/* Scrollable cards */}
+            <div className="bg-card/95 backdrop-blur-md overflow-y-auto px-4 pb-4 border-x border-border">
+              <div className="grid gap-2.5 pt-2">
+                {sorted.map((listing) => (
+                  <div
+                    key={listing.id}
+                    className="flex gap-3 p-2.5 rounded-xl bg-background/80 border border-border animate-fade-in"
+                  >
+                    <SavedHomeThumb image={listing.image} alt={listing.neighborhood} />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-baseline gap-1.5">
+                        <span className="text-base font-bold text-foreground">
+                          ${listing.price.toLocaleString()}
+                        </span>
+                        <span className="text-[11px] text-muted-foreground">
+                          {listing.priceType === "rent" ? "/mo" : ""}
+                        </span>
+                      </div>
+                      <p className="text-xs text-muted-foreground truncate">
+                        {listing.beds}bd · {listing.baths}ba · {listing.neighborhood}
+                      </p>
+                      <div className="flex items-center gap-3 mt-1.5">
+                        <span className="text-[11px] text-muted-foreground">
+                          ~{avgCommute(listing)}m avg
+                        </span>
+                        <span className="text-[11px] font-semibold text-primary">
+                          {listing.matchScore}% match
+                        </span>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
           </div>
-        </>
+        </div>
       )}
     </div>
   );
