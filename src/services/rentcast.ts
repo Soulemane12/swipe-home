@@ -1,4 +1,5 @@
 import type { Listing } from "@/data/mockData";
+import { extractListingTags, computeMatchScore, generateMatchExplanation, fetchListingFeatures } from "./groq";
 
 const API_BASE = "https://api.rentcast.io/v1";
 const API_KEY = import.meta.env.VITE_RENTCAST_API_KEY;
@@ -57,8 +58,8 @@ function generateCommuteTimes(): Listing["commuteTimes"] {
     { placeId: "2", label: "School" },
     { placeId: "3", label: "Gym" },
   ];
-  // Use saved places from sessionStorage if available
-  const savedPlaces = sessionStorage.getItem("onboardingPlaces");
+  // Use saved places from localStorage if available
+  const savedPlaces = localStorage.getItem("onboardingPlaces");
   if (savedPlaces) {
     try {
       const parsed = JSON.parse(savedPlaces);
@@ -75,6 +76,25 @@ function generateCommuteTimes(): Listing["commuteTimes"] {
     ...p,
     minutes: Math.floor(Math.random() * 45) + 10,
   }));
+}
+
+function buildStreetEasyUrl(address: string): string {
+  // "15 Hudson Yards, # 35F, New York, NY 10001" → "15-hudson-yards/35f"
+  const parts = address.split(",").map((s) => s.trim());
+  const building = parts[0]
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, "")
+    .replace(/\s+/g, "-");
+
+  // Try to find unit from "Apt X", "# X", "Unit X"
+  const unitPart = parts.find((p) => /^(apt|#|unit)\s/i.test(p.trim()));
+  const unit = unitPart
+    ? unitPart.trim().replace(/^(apt|#|unit)\s*/i, "").toLowerCase().replace(/\s+/g, "")
+    : "";
+
+  return unit
+    ? `https://streeteasy.com/building/${building}/${unit}`
+    : `https://streeteasy.com/building/${building}`;
 }
 
 function transformToListing(
@@ -98,6 +118,7 @@ function transformToListing(
     address: item.formattedAddress,
     latitude: item.latitude,
     longitude: item.longitude,
+    streetEasyUrl: buildStreetEasyUrl(item.formattedAddress),
     commuteTimes,
     tradeoff: avgCommute < 25
       ? `Short ${Math.round(avgCommute)}min avg commute`
@@ -144,14 +165,41 @@ export async function fetchListings(filters: ListingFilters): Promise<Listing[]>
   const results: Listing[] = [];
 
   if (priceType === "rent" || priceType === "both") {
+    console.log(`[RentCast] Fetching rentals in ${city}, ${state}...`);
     const rentals = await fetchFromAPI("/listings/rental/long-term", params);
+    console.log(`[RentCast] Got ${rentals.length} rental listings`);
     results.push(...rentals.map((item, i) => transformToListing(item, "rent", i)));
   }
 
   if (priceType === "buy" || priceType === "both") {
+    console.log(`[RentCast] Fetching sales in ${city}, ${state}...`);
     const sales = await fetchFromAPI("/listings/sale", params);
+    console.log(`[RentCast] Got ${sales.length} sale listings`);
     results.push(...sales.map((item, i) => transformToListing(item, "buy", results.length + i)));
   }
 
-  return results;
+  // Enrich listings with AI tags, scores, and explanations (one at a time to avoid rate limits)
+  console.log(`[AI] Starting AI enrichment for ${results.length} listings (sequential)...`);
+  const enriched: Listing[] = [];
+  for (let i = 0; i < results.length; i++) {
+    const listing = results[i];
+    console.log(`[AI] Processing listing ${i + 1}/${results.length}: ${listing.address}`);
+    try {
+      const tags = await extractListingTags(listing);
+      const matchScore = computeMatchScore(tags);
+      const matchExplanation = await generateMatchExplanation(listing, tags);
+      const featureDescription = await fetchListingFeatures(listing.address) || undefined;
+      console.log(`[AI] Enriched: ${listing.address} → score=${matchScore}, explanation="${matchExplanation}"`);
+      enriched.push({ ...listing, matchScore, matchExplanation, featureDescription });
+    } catch (err) {
+      console.error(`[AI] Failed to enrich ${listing.address}:`, err);
+      enriched.push(listing);
+    }
+  }
+
+  // Sort by match score descending
+  enriched.sort((a, b) => b.matchScore - a.matchScore);
+  console.log(`[AI] Done! ${enriched.length} listings enriched and sorted by match score`);
+
+  return enriched;
 }

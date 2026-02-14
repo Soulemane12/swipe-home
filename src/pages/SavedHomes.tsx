@@ -58,13 +58,13 @@ const SavedHomes = () => {
   const markersRef = useRef<mapboxgl.Marker[]>([]);
 
   useEffect(() => {
-    const stored = sessionStorage.getItem("savedListings");
+    const stored = localStorage.getItem("savedListings");
     if (stored) {
       setListings(JSON.parse(stored));
     }
 
     // Load and geocode saved places
-    const placesStr = sessionStorage.getItem("savedPlaces");
+    const placesStr = localStorage.getItem("savedPlaces");
     if (placesStr) {
       const places: SavedPlace[] = JSON.parse(placesStr);
       Promise.all(

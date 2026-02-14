@@ -7,6 +7,7 @@ import { Home, Heart, Loader2 } from "lucide-react";
 import { type CommuteMode, type Listing } from "@/data/mockData";
 import { useListings } from "@/hooks/useListings";
 import type { ListingFilters } from "@/services/rentcast";
+import { extractListingTags, recordSwipe } from "@/services/groq";
 
 const SwipeFeed = () => {
   const navigate = useNavigate();
@@ -30,11 +31,19 @@ const SwipeFeed = () => {
 
   const handleSwipe = useCallback(
     (direction: "left" | "right") => {
-      if (direction === "right" && listings[currentIndex]) {
-        const listing = listings[currentIndex];
-        const updated = [...savedListings, listing];
-        setSavedListings(updated);
-        sessionStorage.setItem("savedListings", JSON.stringify(updated));
+      const listing = listings[currentIndex];
+      if (listing) {
+        console.log(`[SwipeFeed] Swiped ${direction.toUpperCase()} on: ${listing.address} ($${listing.price.toLocaleString()})`);
+        // Record swipe for AI preference learning (fire and forget)
+        extractListingTags(listing).then((tags) => {
+          recordSwipe(tags, direction);
+        }).catch(() => {});
+
+        if (direction === "right") {
+          const updated = [...savedListings, listing];
+          setSavedListings(updated);
+          localStorage.setItem("savedListings", JSON.stringify(updated));
+        }
       }
       setCurrentIndex((prev) => prev + 1);
     },

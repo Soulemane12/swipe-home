@@ -62,7 +62,7 @@ const Onboarding = () => {
           <button
             onClick={() => {
               if (step === 1) {
-                sessionStorage.setItem("savedPlaces", JSON.stringify(places));
+                localStorage.setItem("savedPlaces", JSON.stringify(places));
                 setStep(2);
               } else {
                 navigate("/swipe");

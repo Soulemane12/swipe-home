@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { motion, useMotionValue, useTransform, useAnimate, PanInfo } from "framer-motion";
-import { Heart, X } from "lucide-react";
+import { Heart, X, ExternalLink } from "lucide-react";
 import CommuteChip from "./CommuteChip";
 import TradeoffBanner from "./TradeoffBanner";
 import MatchExplanation from "./MatchExplanation";
@@ -112,6 +112,20 @@ const SwipeCard = ({ listing, onSwipe, isTop }: SwipeCardProps) => {
 
           {/* Match explanation */}
           <MatchExplanation text={listing.matchExplanation} />
+
+          {/* StreetEasy link */}
+          {listing.streetEasyUrl && (
+            <a
+              href={listing.streetEasyUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1.5 text-xs text-primary font-medium hover:underline"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <ExternalLink className="w-3 h-3" />
+              View on StreetEasy
+            </a>
+          )}
         </div>
 
         {/* Swipe buttons */}

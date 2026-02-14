@@ -30,4 +30,6 @@ export interface Listing {
   tradeoff: string;
   matchExplanation: string;
   matchScore: number;
+  streetEasyUrl?: string;
+  featureDescription?: string;
 }
