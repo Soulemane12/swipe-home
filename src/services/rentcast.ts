@@ -380,7 +380,7 @@ export async function fetchPatternMatchedListings(
   }
 
   const transformed = Array.from(deduped.values()).map((candidate, i) =>
-    transformToListing(candidate.item, candidate.priceType, i)
+    transformToListing(candidate.item, candidate.priceType)
   );
 
   const rankedSeed = transformed
