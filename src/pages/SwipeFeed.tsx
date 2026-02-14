@@ -1,13 +1,82 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { AnimatePresence } from "framer-motion";
 import SwipeCard from "@/components/SwipeCard";
 import ModeToggle from "@/components/ModeToggle";
-import { Home, Heart, Loader2 } from "lucide-react";
+import { Home, Heart, Loader2, Search, Sparkles, MapPin, SlidersHorizontal } from "lucide-react";
 import { type CommuteMode, type Listing } from "@/data/mockData";
 import { useListings } from "@/hooks/useListings";
 import type { ListingFilters } from "@/services/rentcast";
 import { extractListingTags, recordSwipe } from "@/services/groq";
+
+const LOADING_STEPS = [
+  { icon: Search, label: "Searching nearby listings…", delay: 0 },
+  { icon: SlidersHorizontal, label: "Applying your filters…", delay: 1200 },
+  { icon: MapPin, label: "Calculating commute times…", delay: 2800 },
+  { icon: Sparkles, label: "Ranking by your preferences…", delay: 4200 },
+];
+
+const LoadingSequence = () => {
+  const [activeStep, setActiveStep] = useState(0);
+
+  useEffect(() => {
+    const timers = LOADING_STEPS.map((step, i) =>
+      setTimeout(() => setActiveStep(i), step.delay)
+    );
+    return () => timers.forEach(clearTimeout);
+  }, []);
+
+  return (
+    <div className="flex flex-col items-center gap-6 animate-fade-in w-full max-w-xs">
+      {/* Animated spinner */}
+      <div className="relative w-16 h-16">
+        <div className="absolute inset-0 rounded-full border-[3px] border-muted" />
+        <div className="absolute inset-0 rounded-full border-[3px] border-primary border-t-transparent animate-spin" />
+        <div className="absolute inset-0 flex items-center justify-center">
+          {LOADING_STEPS.map((step, i) => {
+            const Icon = step.icon;
+            return (
+              <Icon
+                key={i}
+                className={`w-5 h-5 text-primary absolute transition-all duration-300 ${
+                  activeStep === i ? "opacity-100 scale-100" : "opacity-0 scale-75"
+                }`}
+              />
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Steps list */}
+      <div className="flex flex-col gap-2.5 w-full">
+        {LOADING_STEPS.map((step, i) => {
+          const Icon = step.icon;
+          const isActive = activeStep === i;
+          const isDone = activeStep > i;
+          return (
+            <div
+              key={i}
+              className={`flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all duration-500 ${
+                isActive
+                  ? "bg-primary/10 text-foreground"
+                  : isDone
+                  ? "text-muted-foreground"
+                  : "text-muted-foreground/40"
+              }`}
+            >
+              <Icon className={`w-4 h-4 flex-shrink-0 transition-colors duration-300 ${isActive ? "text-primary" : ""}`} />
+              <span className="text-sm font-medium">{step.label}</span>
+              {isDone && <span className="ml-auto text-xs text-primary">✓</span>}
+              {isActive && (
+                <Loader2 className="ml-auto w-3.5 h-3.5 text-primary animate-spin" />
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
 
 const SwipeFeed = () => {
   const navigate = useNavigate();
@@ -142,10 +211,7 @@ const SwipeFeed = () => {
       {/* Swipe area */}
       <div className="flex-1 flex items-center justify-center p-4">
         {isLoading ? (
-          <div className="text-center animate-fade-in">
-            <Loader2 className="w-10 h-10 text-primary animate-spin mx-auto mb-4" />
-            <p className="text-sm text-muted-foreground">Finding listings...</p>
-          </div>
+          <LoadingSequence />
         ) : error ? (
           <div className="text-center animate-fade-in">
             <p className="text-sm text-destructive mb-4">
