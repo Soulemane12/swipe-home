@@ -4,12 +4,6 @@ import { useNavigate } from "react-router-dom";
 const Landing = () => {
   const navigate = useNavigate();
 
-  const productStats = [
-    { value: "10", label: "Initial cards" },
-    { value: "4", label: "Real commute modes" },
-    { value: "+10", label: "Pattern match top-up" },
-  ];
-
   const coreFeatures = [
     "Tinder-style swipe experience for homes.",
     "Swipe right to save homes, swipe left to teach the model what to avoid.",
@@ -76,20 +70,6 @@ const Landing = () => {
                   It combines real listing data, real commute times, and AI preference learning to rank what you should
                   see next.
                 </p>
-              </div>
-            </section>
-
-            <section>
-              <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">
-                Product Snapshot
-              </h2>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                {productStats.map((stat) => (
-                  <div key={stat.label} className="rounded-2xl border border-border p-4 bg-secondary/40">
-                    <p className="text-2xl font-bold text-foreground">{stat.value}</p>
-                    <p className="text-sm text-muted-foreground">{stat.label}</p>
-                  </div>
-                ))}
               </div>
             </section>
 
