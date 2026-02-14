@@ -539,6 +539,11 @@ const SwipeFeed = () => {
 
   const remaining = listings.slice(currentIndex);
   const isDone = !isLoading && remaining.length === 0;
+  const totalCards = listings.length;
+  const progressNumerator = totalCards === 0
+    ? 0
+    : Math.min(currentIndex + (isDone ? 0 : 1), totalCards);
+  const progressLabel = totalCards > 0 ? `${progressNumerator}/${totalCards}` : null;
 
   useEffect(() => {
     const totalSwipes = getTotalSwipes();
@@ -575,9 +580,9 @@ const SwipeFeed = () => {
           className="relative w-8 h-8 rounded-full bg-secondary flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
         >
           <Heart className="w-4 h-4" />
-          {savedListings.length > 0 && (
-            <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-primary text-primary-foreground text-[10px] font-bold flex items-center justify-center">
-              {savedListings.length}
+          {progressLabel && (
+            <span className="absolute -top-2 -right-2 min-w-8 h-4 px-1 rounded-full bg-primary text-primary-foreground text-[10px] font-bold leading-none flex items-center justify-center">
+              {progressLabel}
             </span>
           )}
         </button>

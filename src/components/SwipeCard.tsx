@@ -135,14 +135,12 @@ const SwipeCard = ({ listing, onSwipe, isTop, showSubwayLines }: SwipeCardProps)
           </div>
 
           {/* Commute chips */}
-          {listing.commuteTimes.length > 0 ? (
+          {listing.commuteTimes.length > 0 && (
             <div className="flex flex-wrap gap-2">
               {listing.commuteTimes.map((ct) => (
                 <CommuteChip key={ct.placeId} label={ct.label} minutes={ct.minutes} />
               ))}
             </div>
-          ) : (
-            <p className="text-xs text-muted-foreground">Commute times are loading...</p>
           )}
 
           {/* Subway lines */}
