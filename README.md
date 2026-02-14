@@ -124,7 +124,7 @@ The app is optimized for:
 - Used by: `src/services/groq.ts`
 
 ## Data Model
-Main listing shape (`src/data/mockData.ts`):
+Main listing shape (defined in the shared data types file under `src/data`):
 - `id`
 - `image`
 - `price`
@@ -285,7 +285,7 @@ src/
     commute.ts
     groq.ts
   data/
-    mockData.ts
+    shared listing/commute type definitions
   test/
     example.test.ts
 ```
