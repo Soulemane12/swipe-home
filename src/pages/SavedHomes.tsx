@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Home, ArrowLeft, ArrowUpDown, Map, List } from "lucide-react";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
-import type { Listing } from "@/data/mockData";
+import type { Listing } from "@/data/listingTypes";
 
 mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN;
 
@@ -45,6 +45,29 @@ async function geocodeAddress(address: string): Promise<[number, number] | null>
     }
   } catch { /* ignore */ }
   return null;
+}
+
+function SavedHomeThumb({ image, alt }: { image: string; alt: string }) {
+  const [failed, setFailed] = useState(false);
+  const showImage = Boolean(image) && !failed;
+
+  if (!showImage) {
+    return (
+      <div className="w-24 h-24 rounded-xl bg-secondary flex items-center justify-center flex-shrink-0">
+        <span className="text-[10px] text-muted-foreground">No preview</span>
+      </div>
+    );
+  }
+
+  return (
+    <img
+      src={image}
+      alt={alt}
+      className="w-24 h-24 rounded-xl object-cover flex-shrink-0"
+      loading="lazy"
+      onError={() => setFailed(true)}
+    />
+  );
 }
 
 const SavedHomes = () => {
@@ -303,11 +326,7 @@ const SavedHomes = () => {
                   key={listing.id}
                   className="flex gap-3 p-3 rounded-2xl bg-card card-shadow border border-border animate-fade-in"
                 >
-                  <img
-                    src={listing.image}
-                    alt={listing.neighborhood}
-                    className="w-24 h-24 rounded-xl object-cover flex-shrink-0"
-                  />
+                  <SavedHomeThumb image={listing.image} alt={listing.neighborhood} />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-baseline gap-1.5">
                       <span className="text-lg font-bold text-foreground">

@@ -17,6 +17,11 @@ export default defineConfig(({ mode }) => ({
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api\/serpapi/, ""),
       },
+      "/api/here-transit": {
+        target: "https://transit.router.hereapi.com",
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/here-transit/, ""),
+      },
     },
   },
   plugins: [react(), mode === "development" && componentTagger()].filter(Boolean),

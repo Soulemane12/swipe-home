@@ -1,19 +1,35 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { motion, useMotionValue, useTransform, useAnimate, PanInfo } from "framer-motion";
-import { Heart, X, ExternalLink } from "lucide-react";
+import { Heart, X, ExternalLink, TrainFront } from "lucide-react";
 import CommuteChip from "./CommuteChip";
 import TradeoffBanner from "./TradeoffBanner";
 import MatchExplanation from "./MatchExplanation";
-import type { Listing } from "@/data/mockData";
+import type { Listing } from "@/data/listingTypes";
+
+// NYC subway line colors
+const SUBWAY_COLORS: Record<string, string> = {
+  "1": "#EE352E", "2": "#EE352E", "3": "#EE352E",
+  "4": "#00933C", "5": "#00933C", "6": "#00933C",
+  "7": "#B933AD",
+  "A": "#0039A6", "C": "#0039A6", "E": "#0039A6",
+  "B": "#FF6319", "D": "#FF6319", "F": "#FF6319", "M": "#FF6319",
+  "G": "#6CBE45",
+  "J": "#996633", "Z": "#996633",
+  "L": "#A7A9AC",
+  "N": "#FCCC0A", "Q": "#FCCC0A", "R": "#FCCC0A", "W": "#FCCC0A",
+  "S": "#808183",
+};
 
 interface SwipeCardProps {
   listing: Listing;
   onSwipe: (direction: "left" | "right") => void;
   isTop: boolean;
+  showSubwayLines?: boolean;
 }
 
-const SwipeCard = ({ listing, onSwipe, isTop }: SwipeCardProps) => {
+const SwipeCard = ({ listing, onSwipe, isTop, showSubwayLines }: SwipeCardProps) => {
   const [scope, animate] = useAnimate();
+  const [imageFailed, setImageFailed] = useState(false);
   const x = useMotionValue(0);
   const rotate = useTransform(x, [-300, 300], [-15, 15]);
   const opacity = useTransform(x, [-300, -100, 0, 100, 300], [0.5, 1, 1, 1, 0.5]);
@@ -35,6 +51,16 @@ const SwipeCard = ({ listing, onSwipe, isTop }: SwipeCardProps) => {
     onSwipe(direction);
   };
 
+  useEffect(() => {
+    setImageFailed(false);
+  }, [listing.id, listing.image]);
+
+  const hasImage = Boolean(listing.image) && !imageFailed;
+  const displayPrice = listing.price > 0 ? `$${listing.price.toLocaleString()}` : "Price unavailable";
+  const displayAddress = listing.address?.trim() || "Address unavailable";
+  const displayTradeoff = listing.tradeoff?.trim() || "Balancing commute time, price, and features.";
+  const displayExplanation = listing.matchExplanation?.trim() || "Analyzing this home against your swipe pattern.";
+
   return (
     <motion.div
       ref={scope}
@@ -51,12 +77,20 @@ const SwipeCard = ({ listing, onSwipe, isTop }: SwipeCardProps) => {
       <div className="bg-card rounded-3xl card-shadow-lg overflow-hidden h-full flex flex-col">
         {/* Image */}
         <div className="relative h-52 sm:h-64 flex-shrink-0">
-          <img
-            src={listing.image}
-            alt={listing.address}
-            className="w-full h-full object-cover"
-            draggable={false}
-          />
+          {hasImage ? (
+            <img
+              src={listing.image}
+              alt={listing.address}
+              className="w-full h-full object-cover"
+              draggable={false}
+              loading="lazy"
+              onError={() => setImageFailed(true)}
+            />
+          ) : (
+            <div className="w-full h-full bg-secondary/70 flex items-center justify-center">
+              <span className="text-xs text-muted-foreground">Preview unavailable</span>
+            </div>
+          )}
           {/* Like/Nope overlays */}
           {isTop && (
             <>
@@ -86,32 +120,55 @@ const SwipeCard = ({ listing, onSwipe, isTop }: SwipeCardProps) => {
           <div>
             <div className="flex items-baseline gap-1.5">
               <span className="text-2xl font-bold text-foreground">
-                ${listing.price.toLocaleString()}
+                {displayPrice}
               </span>
               <span className="text-sm text-muted-foreground">
-                {listing.priceType === "rent" ? "/mo" : ""}
+                {listing.price > 0 && listing.priceType === "rent" ? "/mo" : ""}
               </span>
             </div>
             <p className="text-sm text-muted-foreground mt-0.5">
               {listing.beds} bed · {listing.baths} bath · {listing.sqft} sqft
             </p>
             <p className="text-sm font-medium text-foreground mt-0.5">
-              {listing.neighborhood}
+              {displayAddress}
             </p>
           </div>
 
           {/* Commute chips */}
-          <div className="flex flex-wrap gap-2">
-            {listing.commuteTimes.map((ct) => (
-              <CommuteChip key={ct.placeId} label={ct.label} minutes={ct.minutes} />
-            ))}
-          </div>
+          {listing.commuteTimes.length > 0 ? (
+            <div className="flex flex-wrap gap-2">
+              {listing.commuteTimes.map((ct) => (
+                <CommuteChip key={ct.placeId} label={ct.label} minutes={ct.minutes} />
+              ))}
+            </div>
+          ) : (
+            <p className="text-xs text-muted-foreground">Commute times are loading...</p>
+          )}
+
+          {/* Subway lines */}
+          {showSubwayLines && listing.nearSubwayLines && listing.nearSubwayLines.length > 0 && (
+            <div className="flex items-center gap-1.5">
+              <TrainFront className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
+              <div className="flex gap-1 flex-wrap">
+                {listing.nearSubwayLines.map((line) => (
+                  <span
+                    key={line}
+                    className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold text-white"
+                    style={{ backgroundColor: SUBWAY_COLORS[line] || "#808183" }}
+                  >
+                    {line}
+                  </span>
+                ))}
+              </div>
+              <span className="text-[10px] text-muted-foreground ml-1">nearby</span>
+            </div>
+          )}
 
           {/* Tradeoff */}
-          <TradeoffBanner text={listing.tradeoff} />
+          <TradeoffBanner text={displayTradeoff} />
 
           {/* Match explanation */}
-          <MatchExplanation text={listing.matchExplanation} />
+          <MatchExplanation text={displayExplanation} />
 
           {/* StreetEasy link */}
           {listing.streetEasyUrl && (

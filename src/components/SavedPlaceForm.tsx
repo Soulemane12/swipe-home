@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { Plus, Trash2, GraduationCap, Briefcase, Dumbbell } from "lucide-react";
 
 interface Place {
@@ -48,6 +47,7 @@ const SavedPlaceForm = ({ places, onChange }: SavedPlaceFormProps) => {
               Place {index + 1}
             </span>
             <button
+              type="button"
               onClick={() => removePlace(place.id)}
               className="text-muted-foreground hover:text-destructive transition-colors"
             >
@@ -61,6 +61,7 @@ const SavedPlaceForm = ({ places, onChange }: SavedPlaceFormProps) => {
               const Icon = opt.icon;
               return (
                 <button
+                  type="button"
                   key={opt.value}
                   onClick={() => updatePlace(place.id, "label", opt.value)}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
@@ -81,6 +82,9 @@ const SavedPlaceForm = ({ places, onChange }: SavedPlaceFormProps) => {
             type="text"
             placeholder="Enter address..."
             value={place.address}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") e.preventDefault();
+            }}
             onChange={(e) => updatePlace(place.id, "address", e.target.value)}
             className="w-full px-3 py-2 rounded-xl bg-background border border-border text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
           />
@@ -89,6 +93,7 @@ const SavedPlaceForm = ({ places, onChange }: SavedPlaceFormProps) => {
           <div className="flex gap-2">
             {(["low", "medium", "high"] as const).map((imp) => (
               <button
+                type="button"
                 key={imp}
                 onClick={() => updatePlace(place.id, "importance", imp)}
                 className={`px-3 py-1 rounded-lg text-xs font-medium capitalize transition-all ${
@@ -106,6 +111,7 @@ const SavedPlaceForm = ({ places, onChange }: SavedPlaceFormProps) => {
 
       {places.length < 3 && (
         <button
+          type="button"
           onClick={addPlace}
           className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl border-2 border-dashed border-border text-sm font-medium text-muted-foreground hover:text-foreground hover:border-primary transition-colors"
         >

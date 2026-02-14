@@ -176,17 +176,24 @@ Files:
 - Personalization activates after `>= 3` total swipes (`likes + dislikes`)
 
 ### Score computation
-`computeMatchScore(...)` combines:
+Scoring is deterministic in 3 stages:
+
+1. Initial listing score (`src/services/rentcast.ts`):
+- computed from listing facts before enrichment
+- signals: beds, baths, sqft, days on market, and price band (`rent` vs `buy`)
+- output range: roughly `55-88`
+
+2. Cold-start enriched score (`src/services/groq.ts`, `< 3 swipes`):
+- computed from extracted real tags
+- signals: amenity density, nearby subway lines, building type, noise level
+- output range: roughly `58-92`
+
+3. Personalized score (`src/services/groq.ts`, `>= 3 swipes`):
 - Feature match ratio: 40%
 - Subway overlap ratio: 20%
 - Price proximity ratio: 20%
 - Building/noise context ratio: 20%
-
-Score output range:
-- clamped to roughly `55-98`
-
-Before threshold:
-- score is a fallback random value (`70-94`)
+- output range: roughly `55-98`
 
 ### Live re-ranking
 After threshold:
@@ -201,10 +208,11 @@ Implemented in `src/hooks/useListings.ts` and `src/services/rentcast.ts`.
 ### Phase 1: Raw Fetch
 - `fetchRawListings(filters)` calls RentCast only
 - returns fast, minimally transformed listings
+- each listing gets an immediate deterministic initial score from listing-level metadata
 
 ### Phase 2: Initial Enrichment
 - first 5 listings are enriched sequentially
-- includes commute, tags, score, explanation, StreetEasy link, feature text
+- includes commute, extracted tags, deterministic cold-start score, explanation, StreetEasy link, feature text
 - UI becomes interactive after this batch
 
 ### Phase 3: Background Enrichment

@@ -1,4 +1,4 @@
-export type CommuteMode = "transit" | "drive" | "walk";
+export type CommuteMode = "transit" | "drive" | "walk" | "bike";
 
 export interface SavedPlace {
   id: string;
@@ -32,4 +32,5 @@ export interface Listing {
   matchScore: number;
   streetEasyUrl?: string;
   featureDescription?: string;
+  nearSubwayLines?: string[];
 }

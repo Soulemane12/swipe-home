@@ -1,5 +1,5 @@
-import { Train, Car, Footprints } from "lucide-react";
-import type { CommuteMode } from "@/data/mockData";
+import { Train, Car, Footprints, Bike } from "lucide-react";
+import type { CommuteMode } from "@/data/listingTypes";
 
 interface ModeToggleProps {
   modes: CommuteMode[];
@@ -9,6 +9,7 @@ interface ModeToggleProps {
 const modeOptions: { value: CommuteMode; label: string; icon: React.ElementType }[] = [
   { value: "transit", label: "Transit", icon: Train },
   { value: "drive", label: "Drive", icon: Car },
+  { value: "bike", label: "Bike", icon: Bike },
   { value: "walk", label: "Walk", icon: Footprints },
 ];
 
@@ -28,6 +29,7 @@ const ModeToggle = ({ modes, onChange }: ModeToggleProps) => {
         const active = modes.includes(m.value);
         return (
           <button
+            type="button"
             key={m.value}
             onClick={() => toggle(m.value)}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
