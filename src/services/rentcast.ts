@@ -25,6 +25,11 @@ export interface ListingFilters {
   offset?: number;
 }
 
+interface PatternMatchFetchOptions {
+  initialBatchSize?: number;
+  onInitialBatch?: (matches: Listing[]) => void | Promise<void>;
+}
+
 interface RentCastListing {
   id: string;
   formattedAddress: string;
@@ -336,7 +341,8 @@ export async function fetchRawListings(filters: ListingFilters): Promise<Listing
 export async function fetchPatternMatchedListings(
   filters: ListingFilters,
   excludeIds: string[] = [],
-  targetCount = 10
+  targetCount = 10,
+  options: PatternMatchFetchOptions = {}
 ): Promise<Listing[]> {
   const { priceType, city = "New York", state = "NY", bedrooms, bathrooms, offset = 0 } = filters;
   const cityQueries = resolveCityQueries(city, state);
@@ -393,10 +399,27 @@ export async function fetchPatternMatchedListings(
 
   console.log(`[Pattern] Candidate pool=${transformed.length}, seed=${rankedSeed.length}, target=${targetCount}`);
 
+  const initialBatchSize = Math.max(
+    0,
+    Math.min(options.initialBatchSize ?? 5, rankedSeed.length)
+  );
+
   const enriched: Listing[] = [];
-  for (const listing of rankedSeed) {
+  for (let i = 0; i < rankedSeed.length; i++) {
+    const listing = rankedSeed[i];
     const enrichedListing = await enrichListing(listing);
     enriched.push(enrichedListing);
+
+    if (i + 1 === initialBatchSize && options.onInitialBatch) {
+      const initialMatches = [...enriched]
+        .sort((a, b) => b.matchScore - a.matchScore)
+        .slice(0, Math.min(targetCount, enriched.length));
+      try {
+        await options.onInitialBatch(initialMatches);
+      } catch (err) {
+        console.warn("[Pattern] onInitialBatch callback failed:", err);
+      }
+    }
   }
 
   return enriched

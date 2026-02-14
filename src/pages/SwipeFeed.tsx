@@ -373,6 +373,7 @@ const SwipeFeed = () => {
 
       try {
         const existingIds = listingsRef.current.map((l) => l.id);
+        let totalAddedCount = 0;
         const matches = await fetchPatternMatchedListings(
           {
             priceType,
@@ -384,7 +385,30 @@ const SwipeFeed = () => {
             offset,
           },
           existingIds,
-          10
+          10,
+          {
+            initialBatchSize: 5,
+            onInitialBatch: (initialMatches) => {
+              let initialAdded = 0;
+              setListings((prev) => {
+                const seen = prev.slice(0, fromIndex);
+                const unseen = prev.slice(fromIndex);
+                const unseenIds = new Set(unseen.map((l) => l.id));
+                const newMatches = initialMatches.filter((m) => !unseenIds.has(m.id));
+                initialAdded = newMatches.length;
+
+                const mergedUnseen = [...unseen, ...newMatches].sort((a, b) => b.matchScore - a.matchScore);
+                return [...seen, ...mergedUnseen];
+              });
+
+              if (initialAdded > 0) {
+                totalAddedCount += initialAdded;
+                setPatternMessage(
+                  `Pattern found: ${summary}. Added ${initialAdded} matches now, finishing the rest in background...`
+                );
+              }
+            },
+          }
         );
 
         let addedCount = 0;
@@ -398,13 +422,14 @@ const SwipeFeed = () => {
           const mergedUnseen = [...unseen, ...newMatches].sort((a, b) => b.matchScore - a.matchScore);
           return [...seen, ...mergedUnseen];
         });
+        totalAddedCount += addedCount;
 
         setPatternMessage(
-          addedCount > 0
-            ? `Pattern found: ${summary}. Added ${addedCount} new matches.`
+          totalAddedCount > 0
+            ? `Pattern found: ${summary}. Added ${totalAddedCount} new matches.`
             : `Pattern found: ${summary}. No new matches in this batch, checking wider inventory next.`
         );
-        if (addedCount > 0) {
+        if (totalAddedCount > 0) {
           autoTopupAttemptsRef.current = 0;
         } else {
           autoTopupAttemptsRef.current += 1;
