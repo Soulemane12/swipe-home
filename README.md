@@ -1,226 +1,261 @@
 # HomeSwipe
 
-AI-assisted swipe app for NYC housing.  
-It pulls real listings, computes commute times, enriches each listing with features/tags, ranks by learned preferences, and lets users save favorites on a map/list view.
+HomeSwipe is a swipe-first NYC housing app: add your commute places, swipe real listings, learn your preferences, and fetch better matches automatically.
+
+The app is designed for hackathon demos and real user testing:
+- Fast first cards
+- Real commute times
+- Real listing enrichment
+- Live preference learning
+- In-app AI monitoring
 
 ## Table Of Contents
-1. Overview
-2. Feature Set
+1. What It Is
+2. Current Routes
 3. Product Flow
-4. Technical Architecture
-5. External APIs
-6. Data Model
-7. Local Storage Model
-8. Preference Learning And Ranking
-9. Progressive Loading Pipeline
-10. Setup And Run
+4. Core Features
+5. AI + Ranking (How Matching Works)
+6. Monitoring (White Circle-Style Workflow)
+7. Data Pipeline + Caching
+8. APIs + Integrations
+9. Local Storage Model
+10. Setup
 11. Environment Variables
-12. Dev Server Proxies
+12. Dev Proxies
 13. Scripts
 14. Project Structure
-15. Error Handling And Fallbacks
-16. Current Limitations
-17. Security Notes
-18. Testing And Quality
-19. Troubleshooting
+15. Troubleshooting + Limitations
+16. Security Notes
 
-## Overview
-HomeSwipe is a frontend-only React + Vite app with client-side integrations to:
-- RentCast for listings
-- Mapbox for geocoding + non-transit directions
-- HERE Transit for public transit routing
-- SerpApi for listing features, subway line hints, and StreetEasy URL lookup
-- Groq for structured feature extraction and match explanation generation
+## What It Is
+HomeSwipe is a React + TypeScript + Vite frontend app for apartment discovery.
 
-The app is optimized for:
-- Fast first content (show first enriched cards quickly)
-- Background enrichment for remaining listings
-- Continuous personalization after user swipes
-- Persistent state with `localStorage` so browser data clearing resets the app
+It combines:
+- RentCast listing inventory
+- Mapbox geocoding/map/directions
+- HERE public transit routing
+- SerpApi enrichment (features, subway hints, StreetEasy lookup)
+- Anthropic Claude (`claude-sonnet-4-20250514`) for tag extraction, explanations, and adaptive quiz copy
 
-## Feature Set
-### 3-step onboarding
-- Add commute destinations (`Work`, `School`, `Gym`)
-- Pick initial listing filters (`Rent/Buy/Both`, `Beds`, `Baths`)
-- Pick commute mode (`Transit`, `Drive`, `Bike`, `Walk`)
-
-### Swipe feed
-- Tinder-style swipe interaction with drag gestures and buttons
-- Live match percentage per card
-- Full listing address on card
-- Commute chips per saved place
-- Subway line badges on cards
-- Tradeoff summary + AI match explanation
-- StreetEasy deep link when found
-
-### Progressive data pipeline
-- Fast raw listing fetch
-- Enrich first 5 listings before UI unlock
-- Continue enrichment in background with status/progress bar
-
-### Preference learning
-- Records likes/dislikes with extracted tags + price context
-- Activates personalized re-scoring after 3 total swipes
-- Re-ranks unseen cards by learned score
-- Shows learned preference insight banner
-
-### Saved homes
-- Save liked listings
-- Sort by match, price, or commute
-- Map mode with listing markers + saved-place markers
-- List mode with compact cards
+## Current Routes
+- `/` -> Landing page
+- `/landing` -> Redirects to `/`
+- `/filter` -> 3-step onboarding
+- `/swipe` -> Main swipe feed
+- `/saved` -> Saved homes map + list panel
+- `/monitor` -> AI monitoring dashboard
+- `*` -> NotFound
 
 ## Product Flow
-1. User opens `/` (Onboarding).
-2. User adds at least one destination and continues.
-3. User selects listing filters and continues.
-4. User selects commute mode and starts swiping.
-5. `/swipe` loads listings with progressive enrichment.
-6. Swipes are recorded into preference history.
-7. After enough swipe history, unseen cards are re-ranked.
-8. Liked homes are stored in `savedListings`.
-9. `/saved` shows saved homes as map or list with sorting options.
+1. Open `/` and go to onboarding (`/filter`).
+2. Add commute places (prefilled with School + Gym by default).
+3. Set listing filters (rent/buy/all, beds, baths).
+4. Choose commute mode.
+5. Start swiping in `/swipe`.
+6. App loads first 10 listings and progressively enriches them.
+7. After enough swipes, app re-scores unseen cards and fetches 10 more pattern matches.
+8. Save liked homes and review them on `/saved`.
+9. Inspect AI quality metrics and raw events on `/monitor`.
 
-## Technical Architecture
-- Frontend: React 18 + TypeScript + Vite
-- Styling/UI: Tailwind CSS + shadcn/ui + Radix UI + framer-motion
-- Routing: `react-router-dom`
-- State: local component state for UI and flow control
-- Persistence/cache: `localStorage`
-- Service layer: `src/services/*` for API orchestration
+## Core Features
+### Landing (`/`)
+- Branded hero + feature highlights
+- Quick CTA to onboarding or direct swipe feed
 
-### Runtime Architecture
-- Browser-only app (no custom backend)
-- API calls are made from client
-- Vite dev server proxies are used in development to avoid CORS for some providers
+### Onboarding (`/filter`)
+- 3-step flow:
+  - Step 1: commute places
+  - Step 2: listing filters
+  - Step 3: commute mode
+- Prefilled hackathon defaults:
+  - School: `645 W 130th St, New York, NY 10027`
+  - Gym: `1250 E 229th St, Bronx, NY 10466`
+- Clear-storage button in header:
+  - Calls `localStorage.clear()`
+  - Resets onboarding state
+  - Keeps the prefilled School + Gym defaults
 
-## External APIs
-### 1. RentCast
-- Rental endpoint: `/v1/listings/rental/long-term`
-- Sale endpoint: `/v1/listings/sale`
-- Used by: `src/services/rentcast.ts`
-- Output: raw listing inventory (price, beds, baths, coordinates, address, etc.)
+### Swipe Feed (`/swipe`)
+- Tinder-style drag + like/dislike buttons
+- Card progress badge (`x/total`) in top-right
+- Filter chips in-feed:
+  - Price type: rent / buy / all
+  - Beds: any / 1 / 2 / 3
+  - Baths: any / 1 / 2
+- Progressive enrichment status bar
+- Enrichment complete toast
+- Pattern-learning status messages
+- Saved homes shortcut
+- Monitoring shortcut
 
-### 2. Mapbox
-- Geocoding API for user places and saved homes map
-- Directions API for `drive`, `bike`, `walk` commute duration
-- Used by: `src/services/commute.ts`, `src/pages/SavedHomes.tsx`
+### Swipe Card UX
+- Full address shown on card
+- Price, beds/baths/sqft, commute chips
+- Nearby subway line badges (when transit is shown)
+- Tradeoff summary
+- Expandable “Why this match?” panel
+  - Expands card area vertically so feedback controls are visible
+  - User feedback buttons:
+    - Wrong commute
+    - Wrong price fit
+    - Wrong explanation
+    - Not similar to my likes
+- StreetEasy deep link when resolved
 
-### 3. HERE Transit
-- Transit routing (`/v8/routes`) for subway/bus/rail travel times
-- Used when preferred mode is `transit`
-- Used by: `src/services/commute.ts`
+### Preference Quiz (AI-generated)
+- Triggered after 4+ swipes (if unanswered)
+- Claude generates dynamic copy for 3 multiple-choice questions:
+  - Commute preference
+  - Budget preference
+  - Style preference
+- Answers are saved and used in score nudges
 
-### 4. SerpApi
-- `engine=google_ai_mode` for listing amenities/features text
-- `engine=google_ai_mode` for nearby subway line hints
-- `engine=google` for canonical StreetEasy building URL lookup
-- Used by: `src/services/groq.ts`, `src/services/rentcast.ts`
+### Pattern-Based Top-Up
+- After preference signals are available, app fetches 10 more listings based on learned pattern
+- Pattern summary is shown to the user
+- New matches merge into unseen stack and are sorted by score
+- Session metadata is persisted so back/forward navigation does not reset progression
 
-### 5. Groq
-- Model: `llama-3.1-8b-instant`
-- Uses: extract normalized listing tags as strict JSON
-- Uses: generate concise match explanation sentence
-- Used by: `src/services/groq.ts`
+### Saved Homes (`/saved`)
+- Full-screen map + floating list panel
+- Sort saved homes by:
+  - Best match
+  - Lowest price
+  - Shortest commute
+- Clicking a saved place chip (School/Work/Gym) zooms map and opens popup
+- Clicking a saved listing row zooms map and opens that listing marker popup
 
-## Data Model
-Main listing shape (defined in the shared data types file under `src/data`):
-- `id`
-- `image`
-- `price`
-- `priceType` (`rent` | `buy`)
-- `beds`, `baths`, `sqft`
-- `neighborhood`, `address`
-- `latitude`, `longitude`
-- `commuteTimes[]`
-- `tradeoff`
-- `matchExplanation`
-- `matchScore`
-- `streetEasyUrl?`
-- `featureDescription?`
-- `nearSubwayLines?`
+## AI + Ranking (How Matching Works)
 
-Tag schema extracted by AI (`ListingTags` in `src/services/groq.ts`):
-- boolean amenities (`natural_light`, `elevator`, `laundry_in_unit`, etc.)
-- `near_subway_lines[]`
-- `noise_level` (`quiet` | `average` | `unknown`)
-- `building_type` (`walkup` | `elevator` | `unknown`)
+## 1. Cold Start (before 3 swipes)
+- Deterministic score from extracted tags:
+  - amenity density
+  - subway presence
+  - building type
+  - noise level
+
+## 2. Personalized Scoring (3+ swipes)
+Signals include:
+- Liked feature overlap
+- Liked/disliked subway line overlap
+- Liked/disliked price range distance
+- Building type + noise preferences
+- Liked/disliked commute distance patterns
+- Explicit quiz answers (commute/budget/style nudges)
+
+Output score range is clamped to roughly `55-98`.
+
+## 3. Explanation Generation
+- Claude generates concise explanations
+- Quality checks run on output:
+  - groundedness score
+  - hallucination flag
+  - constraint compliance
+- If quality fails, app falls back to a deterministic safe explanation
+
+## Monitoring (White Circle-Style Workflow)
+Monitoring is implemented as an internal provider architecture with a `/monitor` UI.
+
+### Instrumented Stages
+- Tag extraction lifecycle + quality
+- Explanation generation + quality checks
+- Score computation (inputs/components/output)
+- End-to-end listing enrichment success/failure
+- Swipe actions + explicit user feedback labels
+
+### `/monitor` Dashboard
+- Metric cards:
+  - tag parse success rate
+  - tag schema valid rate
+  - null/unknown tag rate avg
+  - subway line match rate avg
+  - explanation groundedness avg
+  - hallucination rate
+  - constraint compliance rate
+- Recent events table
+- Refresh + clear queue controls
+- Back button returns to previous route (fallback to `/swipe`)
+
+### Monitoring Provider Behavior
+- In dev (default): local queue provider only (no noisy `/api/monitor` 404s)
+- In prod or when `VITE_MONITOR_ENDPOINT` is set: HTTP provider with local fallback queue
+
+## Data Pipeline + Caching
+### Listing Pipeline
+1. **Raw fetch** (`fetchRawListings`)
+   - Fast RentCast pull
+   - Multi-borough support for NYC
+2. **Initial enrichment batch**
+   - First 5 listings enriched before unlocking feed
+3. **Background enrichment**
+   - Remaining listings enriched in place while user swipes
+
+### Borough Coverage
+When city filter is NYC (`New York`, `NYC`, `all boroughs`, etc.), listings are fetched across:
+- Manhattan (New York)
+- Brooklyn
+- Queens
+- Bronx
+- Staten Island
+
+### Caching
+- In-memory caches for fast repeats
+- `localStorage` caches for persistence across reloads
+- Session cache keys avoid restart when navigating away and back
+
+## APIs + Integrations
+### RentCast
+- `GET /v1/listings/rental/long-term`
+- `GET /v1/listings/sale`
+- Source of listing inventory
+
+### Mapbox
+- Geocoding for user places
+- Directions for drive/bike/walk
+- Static map-style preview images
+- Saved homes map rendering
+
+### HERE Transit
+- `GET /v8/routes`
+- Real transit times for subway/bus/rail
+
+### SerpApi
+- `engine=google_ai_mode` for amenities/features
+- `engine=google_ai_mode` for nearby subway hints
+- `engine=google` for canonical StreetEasy URLs
+
+### Anthropic Claude
+- Model: `claude-sonnet-4-20250514`
+- Used for:
+  - listing tag extraction (strict schema)
+  - concise match explanation generation
+  - adaptive quiz wording generation
+- Implementation currently lives in `src/services/groq.ts` (legacy filename)
 
 ## Local Storage Model
-Persistent app state keys:
-- `savedPlaces` -> onboarding destinations
-- `listingFilters` -> onboarding filters
-- `commuteMode` -> selected commute mode
-- `savedListings` -> liked listings
-- `swipeHistory` -> liked/disliked entries with tags + price context
+### Product State
+- `savedPlaces`
+- `listingFilters`
+- `commuteMode`
+- `savedListings`
+- `swipeHistory`
+- `preferenceQuizAnswers`
 
-Cache keys (performance + rate-limit protection):
-- `tags_<listingId>` -> extracted `ListingTags`
-- `features_<address>` -> SerpApi feature text
-- `subway_<address>` -> subway lines
-- `geo_<address>` -> geocoded coordinates
-- `se_url_<address>` -> resolved StreetEasy URL
+### Session / Feed State
+- `swipeSession_v1_<priceType>_<beds>_<baths>` (listings + enrichment cache)
+- `swipeSession_v1_<priceType>_<beds>_<baths>_meta` (current index + pattern batch count)
 
-Note: because persistence is `localStorage`, clearing browser site data removes user state and caches.
+### Enrichment / Geo Caches
+- `tags_<listingId>`
+- `features_<address>`
+- `subway_<address>`
+- `geo_<address>`
+- `se_url_<address>`
 
-## Preference Learning And Ranking
-Files:
-- `src/services/groq.ts`
-- `src/pages/SwipeFeed.tsx`
+### Monitoring
+- `monitoringEventQueue_v1`
 
-### Swipe recording
-- On swipe, listing tags are fetched (usually cache hit)
-- `recordSwipe(...)` stores direction, tags, price, and `priceType`
-
-### Activation threshold
-- Personalization activates after `>= 3` total swipes (`likes + dislikes`)
-
-### Score computation
-Scoring is deterministic in 3 stages:
-
-1. Initial listing score (`src/services/rentcast.ts`):
-- computed from listing facts before enrichment
-- signals: beds, baths, sqft, days on market, and price band (`rent` vs `buy`)
-- output range: roughly `55-88`
-
-2. Cold-start enriched score (`src/services/groq.ts`, `< 3 swipes`):
-- computed from extracted real tags
-- signals: amenity density, nearby subway lines, building type, noise level
-- output range: roughly `58-92`
-
-3. Personalized score (`src/services/groq.ts`, `>= 3 swipes`):
-- Feature match ratio: 40%
-- Subway overlap ratio: 20%
-- Price proximity ratio: 20%
-- Building/noise context ratio: 20%
-- output range: roughly `55-98`
-
-### Live re-ranking
-After threshold:
-- unseen listings are rescored using cached tags
-- unseen slice is sorted descending by `matchScore`
-- already seen listings stay fixed
-- race guard prevents stale async runs from overriding newer re-ranks
-
-## Progressive Loading Pipeline
-Implemented in `src/hooks/useListings.ts` and `src/services/rentcast.ts`.
-
-### Phase 1: Raw Fetch
-- `fetchRawListings(filters)` calls RentCast only
-- returns fast, minimally transformed listings
-- each listing gets an immediate deterministic initial score from listing-level metadata
-
-### Phase 2: Initial Enrichment
-- first 5 listings are enriched sequentially
-- includes commute, extracted tags, deterministic cold-start score, explanation, StreetEasy link, feature text
-- UI becomes interactive after this batch
-
-### Phase 3: Background Enrichment
-- remaining listings are enriched in the background
-- each listing is replaced in-place when done
-- feed shows enrichment progress + current address
-
-## Setup And Run
+## Setup
 ### Prerequisites
 - Node.js 18+ (Node 20+ recommended)
 - npm
@@ -230,45 +265,43 @@ Implemented in `src/hooks/useListings.ts` and `src/services/rentcast.ts`.
 npm install
 ```
 
-### Configure env
-Create `.env` at project root:
-```bash
-VITE_RENTCAST_API_KEY=your_rentcast_key
-VITE_MAPBOX_TOKEN=your_mapbox_token
-VITE_GROQ_API_KEY=your_groq_key
-VITE_SERPAPI_KEY=your_serpapi_key
-VITE_HERE_API_KEY=your_here_key
-```
-
-### Start dev server
+### Run Dev Server
 ```bash
 npm run dev
 ```
+Default URL: `http://localhost:8080`
 
-Default dev URL: `http://localhost:8080`
+### Build
+```bash
+npm run build
+```
 
 ## Environment Variables
-- `VITE_RENTCAST_API_KEY`: RentCast listing access
-- `VITE_MAPBOX_TOKEN`: geocoding + map + non-transit directions
-- `VITE_GROQ_API_KEY`: AI tag extraction and explanations
-- `VITE_SERPAPI_KEY`: feature/subway lookup and StreetEasy URL search
-- `VITE_HERE_API_KEY`: real public transit routing
+Create `.env` in project root:
 
-## Dev Server Proxies
+```bash
+VITE_RENTCAST_API_KEY=your_rentcast_key
+VITE_MAPBOX_TOKEN=your_mapbox_token
+VITE_HERE_API_KEY=your_here_key
+VITE_SERPAPI_KEY=your_serpapi_key
+VITE_ANTHROPIC_API_KEY=your_anthropic_key
+# Optional: only needed if you have a real monitor ingest backend
+VITE_MONITOR_ENDPOINT=https://your-monitor-endpoint/api/monitor
+```
+
+## Dev Proxies
 Configured in `vite.config.ts`:
 - `/api/serpapi` -> `https://serpapi.com`
 - `/api/here-transit` -> `https://transit.router.hereapi.com`
 
-Used in development to reduce CORS issues for browser calls.
-
 ## Scripts
-- `npm run dev` -> start Vite dev server
+- `npm run dev` -> start dev server
 - `npm run build` -> production build
 - `npm run build:dev` -> dev-mode build
-- `npm run preview` -> preview built output
-- `npm run test` -> run Vitest once
-- `npm run test:watch` -> watch mode tests
+- `npm run preview` -> preview production build
 - `npm run lint` -> run ESLint
+- `npm run test` -> run Vitest once
+- `npm run test:watch` -> run Vitest in watch mode
 
 ## Project Structure
 ```text
@@ -276,24 +309,44 @@ src/
   components/
     SavedPlaceForm.tsx
     SwipeCard.tsx
+    MatchExplanation.tsx
     ModeToggle.tsx
     CommuteChip.tsx
     TradeoffBanner.tsx
-    MatchExplanation.tsx
-    ui/* (shadcn primitives)
+    ui/*
   hooks/
     useListings.ts
   pages/
+    Landing.tsx
     Onboarding.tsx
     SwipeFeed.tsx
     SavedHomes.tsx
+    Monitor.tsx
     NotFound.tsx
   services/
     rentcast.ts
     commute.ts
-    groq.ts
+    groq.ts         # Claude-backed AI logic (legacy file name)
+    monitoring.ts
   data/
-    shared listing/commute type definitions
-  test/
-    example.test.ts
+    listingTypes.ts
 ```
+
+## Troubleshooting + Limitations
+- SerpApi can return `429` when rate-limited:
+  - Feature/subway/StreetEasy enrichment may be missing temporarily.
+- If `VITE_MAPBOX_TOKEN` is missing:
+  - map previews/geocoding/directions degrade.
+- If `VITE_HERE_API_KEY` is missing:
+  - transit commute times cannot be calculated.
+- If no monitor endpoint is configured:
+  - events stay in local queue and are still visible in `/monitor`.
+- API keys are used in browser context in this project shape.
+
+## Security Notes
+This is currently a frontend-only architecture optimized for rapid hackathon iteration.
+For production hardening:
+- move third-party API calls behind your backend
+- keep provider keys server-side
+- add auth/rate limits/abuse protection for monitor ingest
+- add stricter validation and observability pipelines

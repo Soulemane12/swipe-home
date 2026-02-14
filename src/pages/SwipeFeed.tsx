@@ -3,10 +3,11 @@ import { useNavigate } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import SwipeCard from "@/components/SwipeCard";
 import ModeToggle from "@/components/ModeToggle";
-import { Home, Heart, Loader2, Search, Sparkles, MapPin, SlidersHorizontal } from "lucide-react";
+import { Home, Heart, Loader2, Search, Sparkles, MapPin, SlidersHorizontal, Activity } from "lucide-react";
 import { type CommuteMode, type Listing } from "@/data/listingTypes";
 import { useListings } from "@/hooks/useListings";
 import { fetchPatternMatchedListings, type ListingFilters } from "@/services/rentcast";
+import { monitorEvent, type FeedbackLabel } from "@/services/monitoring";
 import {
   computeMatchScore,
   extractListingTags,
@@ -192,6 +193,7 @@ const SwipeFeed = () => {
   const [learnedInsight, setLearnedInsight] = useState<string | null>(null);
   const [isFindingPatternMatches, setIsFindingPatternMatches] = useState(false);
   const [patternMessage, setPatternMessage] = useState<string | null>(null);
+  const [isTopCardExpanded, setIsTopCardExpanded] = useState(false);
   const [showPreferenceQuiz, setShowPreferenceQuiz] = useState(false);
   const [quizDraft, setQuizDraft] = useState<Partial<PreferenceQuizAnswers>>(
     () => getPreferenceQuizAnswers() || {}
@@ -288,6 +290,10 @@ const SwipeFeed = () => {
       setCurrentIndex(listings.length);
     }
   }, [currentIndex, listings.length]);
+
+  useEffect(() => {
+    setIsTopCardExpanded(false);
+  }, [currentIndex]);
 
   useEffect(() => {
     setPatternMessage(null);
@@ -432,7 +438,11 @@ const SwipeFeed = () => {
         const cachedTags = getCachedListingTags(listing.id);
         if (!cachedTags) continue;
 
-        const newScore = computeMatchScore(cachedTags, listing.price, listing.priceType, listing.commuteTimes);
+        const newScore = computeMatchScore(cachedTags, listing.price, listing.priceType, listing.commuteTimes, {
+          listingId: listing.id,
+          address: listing.address,
+          reason: "rescore",
+        });
         updatedScores.set(listing.id, newScore);
         console.log(`[Rescore] ${listing.address}: ${listing.matchScore} → ${newScore}`);
       }
@@ -499,6 +509,22 @@ const SwipeFeed = () => {
     hasPromptedQuizRef.current = true;
   }, []);
 
+  const handleCardFeedback = useCallback((listing: Listing, label: FeedbackLabel) => {
+    const avgCommute = getAverageCommuteMinutes(listing);
+    void monitorEvent("user_feedback", {
+      stage: "explicit_feedback",
+      feedbackLabel: label,
+      listingId: listing.id,
+      address: listing.address,
+      swipeIndex: currentIndex,
+      totalSwipes: getTotalSwipes(),
+      score: listing.matchScore,
+      price: listing.price,
+      priceType: listing.priceType,
+      avgCommuteMinutes: avgCommute,
+    });
+  }, [currentIndex]);
+
   const handleSwipe = useCallback(
     (direction: "left" | "right") => {
       const listing = listings[currentIndex];
@@ -506,12 +532,34 @@ const SwipeFeed = () => {
         const nextIndex = currentIndex + 1;
         const avgCommute = getAverageCommuteMinutes(listing);
         console.log(`[SwipeFeed] Swiped ${direction.toUpperCase()} on: ${listing.address} ($${listing.price.toLocaleString()})`);
+        void monitorEvent("user_feedback", {
+          stage: "swipe_action",
+          listingId: listing.id,
+          address: listing.address,
+          swipeDirection: direction,
+          feedbackLabel: direction === "left" ? "not_similar_to_likes" : undefined,
+          swipeIndex: currentIndex,
+          score: listing.matchScore,
+          price: listing.price,
+          priceType: listing.priceType,
+          avgCommuteMinutes: avgCommute,
+          totalSwipesBeforeRecord: getTotalSwipes(),
+        });
+
         // Record swipe for AI preference learning
         extractListingTags(listing).then((tags) => {
           recordSwipe(tags, direction, listing.price, listing.priceType, avgCommute);
 
           // After 3+ swipes, re-score remaining unseen listings and re-sort
           const totalSwipes = getTotalSwipes();
+          void monitorEvent("user_feedback", {
+            stage: "swipe_recorded",
+            listingId: listing.id,
+            address: listing.address,
+            swipeDirection: direction,
+            feedbackLabel: direction === "left" ? "not_similar_to_likes" : undefined,
+            totalSwipes,
+          });
           if (totalSwipes >= 4 && !hasPromptedQuizRef.current && !getPreferenceQuizAnswers()) {
             setShowPreferenceQuiz(true);
           }
@@ -559,6 +607,7 @@ const SwipeFeed = () => {
     patternFetchInFlightRef.current = false;
     patternBatchCountRef.current = 0;
     autoTopupAttemptsRef.current = 0;
+    setIsTopCardExpanded(false);
     setter();
     setCurrentIndex(0);
     persistSessionMeta(0);
@@ -575,17 +624,26 @@ const SwipeFeed = () => {
           <span className="font-bold text-foreground">HomeSwipe</span>
         </div>
         <ModeToggle modes={commuteModes} onChange={setCommuteModes} />
-        <button
-          onClick={() => navigate("/saved")}
-          className="relative w-8 h-8 rounded-full bg-secondary flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
-        >
-          <Heart className="w-4 h-4" />
-          {progressLabel && (
-            <span className="absolute -top-2 -right-2 min-w-8 h-4 px-1 rounded-full bg-primary text-primary-foreground text-[10px] font-bold leading-none flex items-center justify-center">
-              {progressLabel}
-            </span>
-          )}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => navigate("/monitor")}
+            className="w-8 h-8 rounded-full bg-secondary flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
+            title="Open monitoring"
+          >
+            <Activity className="w-4 h-4" />
+          </button>
+          <button
+            onClick={() => navigate("/saved")}
+            className="relative w-8 h-8 rounded-full bg-secondary flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <Heart className="w-4 h-4" />
+            {progressLabel && (
+              <span className="absolute -top-2 -right-2 min-w-8 h-4 px-1 rounded-full bg-primary text-primary-foreground text-[10px] font-bold leading-none flex items-center justify-center">
+                {progressLabel}
+              </span>
+            )}
+          </button>
+        </div>
       </header>
 
       {/* Filters */}
@@ -892,13 +950,19 @@ const SwipeFeed = () => {
             </button>
           </div>
         ) : (
-          <div className="relative w-full max-w-md h-[580px] sm:h-[640px]">
+          <div
+            className={`relative w-full max-w-md transition-[height] duration-300 ${
+              isTopCardExpanded ? "h-[680px] sm:h-[760px]" : "h-[580px] sm:h-[640px]"
+            }`}
+          >
             <AnimatePresence>
               {remaining.slice(0, 2).map((listing, i) => (
                 <SwipeCard
                   key={listing.id}
                   listing={listing}
                   onSwipe={handleSwipe}
+                  onFeedback={handleCardFeedback}
+                  onExplanationToggle={i === 0 ? setIsTopCardExpanded : undefined}
                   isTop={i === 0}
                   showSubwayLines={commuteModes.includes("transit")}
                 />

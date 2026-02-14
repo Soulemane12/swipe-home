@@ -1,6 +1,9 @@
-const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
-const GROQ_API_KEY = import.meta.env.VITE_GROQ_API_KEY;
-const MODEL = "llama-3.1-8b-instant";
+import { monitorEvent } from "./monitoring";
+
+const ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages";
+const ANTHROPIC_API_KEY = import.meta.env.VITE_ANTHROPIC_API_KEY;
+const MODEL = "claude-sonnet-4-20250514";
+const PROMPT_VERSION = "v2";
 
 export interface ListingTags {
   natural_light: boolean;
@@ -82,6 +85,150 @@ function parseQuizOptionsStrict<T extends string>(
     value,
     label: normalized.get(value)!,
   }));
+}
+
+const TAG_BOOLEAN_KEYS: (keyof ListingTags)[] = [
+  "natural_light",
+  "elevator",
+  "laundry_in_building",
+  "laundry_in_unit",
+  "doorman",
+  "pet_friendly",
+  "dishwasher",
+  "renovated",
+];
+
+function isValidNoiseLevel(value: unknown): value is ListingTags["noise_level"] {
+  return value === "quiet" || value === "average" || value === "unknown";
+}
+
+function isValidBuildingType(value: unknown): value is ListingTags["building_type"] {
+  return value === "walkup" || value === "elevator" || value === "unknown";
+}
+
+function isValidTagsSchema(value: unknown): value is ListingTags {
+  if (!value || typeof value !== "object") return false;
+  const parsed = value as Record<string, unknown>;
+
+  for (const key of TAG_BOOLEAN_KEYS) {
+    if (typeof parsed[key] !== "boolean") return false;
+  }
+
+  if (!Array.isArray(parsed.near_subway_lines)) return false;
+  if (!parsed.near_subway_lines.every((line) => typeof line === "string")) return false;
+  if (!isValidNoiseLevel(parsed.noise_level)) return false;
+  if (!isValidBuildingType(parsed.building_type)) return false;
+  return true;
+}
+
+function computeNullOrUnknownTagRate(tags: ListingTags): number {
+  let unknownSignals = 0;
+  let totalSignals = TAG_BOOLEAN_KEYS.length + 2;
+
+  if (tags.building_type === "unknown") unknownSignals++;
+  if (tags.noise_level === "unknown") unknownSignals++;
+
+  const enabledTags = TAG_BOOLEAN_KEYS.filter((key) => tags[key] === true).length;
+  if (enabledTags === 0) unknownSignals += 0.5;
+
+  return Number((unknownSignals / totalSignals).toFixed(4));
+}
+
+function computeSubwayLineMatchRate(sourceLines: string[], extractedLines: string[]): number {
+  if (sourceLines.length === 0 && extractedLines.length === 0) return 1;
+  if (sourceLines.length === 0 || extractedLines.length === 0) return 0;
+
+  const source = new Set(sourceLines);
+  const extracted = new Set(extractedLines);
+  let overlap = 0;
+  for (const line of source) {
+    if (extracted.has(line)) overlap++;
+  }
+  const denom = Math.max(source.size, extracted.size);
+  return Number((overlap / denom).toFixed(4));
+}
+
+function buildDeterministicExplanation(
+  listing: {
+    neighborhood: string;
+    beds: number;
+    baths: number;
+    commuteTimes: { label: string; minutes: number }[];
+  },
+  tags: ListingTags
+): string {
+  const highlights: string[] = [];
+  if (tags.elevator) highlights.push("elevator");
+  if (tags.doorman) highlights.push("doorman");
+  if (tags.laundry_in_unit) highlights.push("in-unit laundry");
+  if (tags.dishwasher) highlights.push("dishwasher");
+  if (tags.renovated) highlights.push("renovated");
+  if (tags.near_subway_lines.length > 0) {
+    highlights.push(`near ${tags.near_subway_lines.slice(0, 3).join("/")}`);
+  }
+  const shortest = listing.commuteTimes
+    .slice()
+    .sort((a, b) => a.minutes - b.minutes)[0];
+  if (shortest) highlights.push(`${shortest.minutes}min to ${shortest.label}`);
+
+  const detail = highlights.slice(0, 3).join(", ");
+  return detail
+    ? `${listing.beds}bd/${listing.baths}ba · ${detail}`
+    : `${listing.beds}bd/${listing.baths}ba in ${listing.neighborhood}`;
+}
+
+function evaluateExplanationQuality(
+  explanation: string,
+  listing: {
+    commuteTimes: { label: string; minutes: number }[];
+  },
+  tags: ListingTags
+): {
+  groundednessScore: number;
+  hallucinationFlag: boolean;
+  constraintCompliance: boolean;
+} {
+  const text = explanation.toLowerCase();
+  const words = explanation.trim().split(/\s+/).filter(Boolean);
+  const constraintCompliance = words.length > 0 && words.length <= 15;
+
+  const featureChecks: Array<{ phrase: string; allowed: boolean }> = [
+    { phrase: "elevator", allowed: tags.elevator },
+    { phrase: "doorman", allowed: tags.doorman },
+    { phrase: "laundry", allowed: tags.laundry_in_building || tags.laundry_in_unit },
+    { phrase: "dishwasher", allowed: tags.dishwasher },
+    { phrase: "pet", allowed: tags.pet_friendly },
+    { phrase: "renovated", allowed: tags.renovated },
+    { phrase: "natural light", allowed: tags.natural_light },
+  ];
+
+  let checks = 0;
+  let violations = 0;
+
+  for (const check of featureChecks) {
+    if (!text.includes(check.phrase)) continue;
+    checks++;
+    if (!check.allowed) violations++;
+  }
+
+  const minutesMentioned = Array.from(explanation.matchAll(/(\d+)\s*min/gi)).map((m) => Number(m[1]));
+  if (minutesMentioned.length > 0) {
+    checks++;
+    const known = new Set(listing.commuteTimes.map((c) => Math.round(c.minutes)));
+    const matchesKnownMinute = minutesMentioned.some((minute) => known.has(minute));
+    if (!matchesKnownMinute) violations++;
+  }
+
+  const hallucinationFlag = violations > 0;
+  let groundednessScore = checks > 0 ? 1 - violations / checks : 0.8;
+  if (!constraintCompliance) groundednessScore -= 0.2;
+  groundednessScore = Math.max(0, Math.min(1, groundednessScore));
+
+  return {
+    groundednessScore: Number(groundednessScore.toFixed(4)),
+    hallucinationFlag,
+    constraintCompliance,
+  };
 }
 
 function computeColdStartScore(tags: ListingTags): number {
@@ -268,39 +415,50 @@ export async function fetchNearbySubways(address: string): Promise<string[]> {
 const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 async function callGroq(messages: { role: string; content: string }[], retries = 3, maxTokens = 512): Promise<string> {
+  // Separate system message from user/assistant messages for Anthropic API
+  const systemMessages = messages.filter((m) => m.role === "system");
+  const nonSystemMessages = messages.filter((m) => m.role !== "system");
+  const systemPrompt = systemMessages.map((m) => m.content).join("\n\n") || undefined;
+
   for (let attempt = 0; attempt < retries; attempt++) {
-    console.log(`[Groq] API call attempt ${attempt + 1}/${retries}`);
-    const response = await fetch(GROQ_API_URL, {
+    console.log(`[Claude] API call attempt ${attempt + 1}/${retries}`);
+    const response = await fetch(ANTHROPIC_API_URL, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${GROQ_API_KEY}`,
+        "x-api-key": ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01",
+        "anthropic-dangerous-direct-browser-access": "true",
       },
       body: JSON.stringify({
         model: MODEL,
-        messages,
-        temperature: 0,
         max_tokens: maxTokens,
+        ...(systemPrompt ? { system: systemPrompt } : {}),
+        messages: nonSystemMessages.map((m) => ({
+          role: m.role as "user" | "assistant",
+          content: m.content,
+        })),
       }),
     });
 
     if (response.status === 429) {
       const waitMs = Math.min(1000 * 2 ** attempt, 8000);
-      console.warn(`[Groq] Rate limited (429), retrying in ${waitMs}ms...`);
+      console.warn(`[Claude] Rate limited (429), retrying in ${waitMs}ms...`);
       await delay(waitMs);
       continue;
     }
 
     if (!response.ok) {
       const err = await response.json().catch(() => ({}));
-      throw new Error(err.error?.message || `Groq API error: ${response.status}`);
+      throw new Error(err.error?.message || `Claude API error: ${response.status}`);
     }
 
     const data = await response.json();
-    return data.choices[0]?.message?.content || "";
+    const textBlock = data.content?.find((b: { type: string }) => b.type === "text");
+    return textBlock?.text || "";
   }
 
-  throw new Error("Groq API rate limit exceeded after retries");
+  throw new Error("Claude API rate limit exceeded after retries");
 }
 
 export async function extractListingTags(listing: {
@@ -316,6 +474,14 @@ export async function extractListingTags(listing: {
   // Check cache
   if (tagsCache.has(listing.id)) {
     console.log(`[Tags] Cache HIT (memory) for ${listing.address}`);
+    void monitorEvent("ai_monitoring", {
+      stage: "tag_extraction_cache_hit",
+      source: "memory",
+      listingId: listing.id,
+      address: listing.address,
+      model: MODEL,
+      promptVersion: PROMPT_VERSION,
+    });
     return tagsCache.get(listing.id)!;
   }
 
@@ -327,10 +493,34 @@ export async function extractListingTags(listing: {
       const tags = JSON.parse(cached) as ListingTags;
       tagsCache.set(listing.id, tags);
       console.log(`[Tags] Cache HIT (localStorage) for ${listing.address}`);
+      void monitorEvent("ai_monitoring", {
+        stage: "tag_extraction_cache_hit",
+        source: "localStorage",
+        listingId: listing.id,
+        address: listing.address,
+        model: MODEL,
+        promptVersion: PROMPT_VERSION,
+      });
       return tags;
     } catch { /* re-extract */ }
   }
   console.log(`[Tags] Cache MISS — extracting tags for ${listing.address}`);
+  const extractionStart = Date.now();
+  void monitorEvent("ai_monitoring", {
+    stage: "tag_extraction_start",
+    listingId: listing.id,
+    model: MODEL,
+    promptVersion: PROMPT_VERSION,
+    input: {
+      address: listing.address,
+      neighborhood: listing.neighborhood,
+      beds: listing.beds,
+      baths: listing.baths,
+      sqft: listing.sqft,
+      price: listing.price,
+      priceType: listing.priceType,
+    },
+  });
 
   // Fetch real features and subway data from Google AI Mode via SerpApi
   const [realFeatures, subwayLines] = await Promise.all([
@@ -380,13 +570,75 @@ Respond with ONLY valid JSON. No markdown, no explanation.`,
     ]);
 
     const cleaned = result.replace(/```json?\n?/g, "").replace(/```/g, "").trim();
-    const tags = JSON.parse(cleaned) as ListingTags;
+    let parsed: unknown;
+    let jsonParseSuccess = false;
+    try {
+      parsed = JSON.parse(cleaned);
+      jsonParseSuccess = true;
+    } catch (parseError) {
+      void monitorEvent("ai_monitoring", {
+        stage: "tag_extraction_complete",
+        listingId: listing.id,
+        model: MODEL,
+        promptVersion: PROMPT_VERSION,
+        durationMs: Date.now() - extractionStart,
+        jsonParseSuccess: false,
+        schemaValid: false,
+        error: parseError instanceof Error ? parseError.message : String(parseError),
+      });
+      throw parseError;
+    }
+
+    const schemaValid = isValidTagsSchema(parsed);
+    if (!schemaValid) {
+      void monitorEvent("ai_monitoring", {
+        stage: "tag_extraction_complete",
+        listingId: listing.id,
+        model: MODEL,
+        promptVersion: PROMPT_VERSION,
+        durationMs: Date.now() - extractionStart,
+        jsonParseSuccess,
+        schemaValid: false,
+        error: "invalid_tag_schema",
+      });
+      throw new Error("Invalid tag schema");
+    }
+
+    const tags = parsed;
+    const nullOrUnknownTagRate = computeNullOrUnknownTagRate(tags);
+    const subwayLineMatchRate = computeSubwayLineMatchRate(subwayLines, tags.near_subway_lines);
+
+    void monitorEvent("ai_monitoring", {
+      stage: "tag_extraction_complete",
+      listingId: listing.id,
+      model: MODEL,
+      promptVersion: PROMPT_VERSION,
+      durationMs: Date.now() - extractionStart,
+      jsonParseSuccess: true,
+      schemaValid: true,
+      nullOrUnknownTagRate,
+      subwayLineMatchRate,
+      output: {
+        nearSubwayLines: tags.near_subway_lines,
+        noiseLevel: tags.noise_level,
+        buildingType: tags.building_type,
+      },
+    });
+
     console.log(`[Tags] Extracted for ${listing.address}:`, tags);
     tagsCache.set(listing.id, tags);
     localStorage.setItem(cacheKey, JSON.stringify(tags));
     return tags;
   } catch (err) {
     console.error(`[Tags] Failed for ${listing.address}:`, err);
+    void monitorEvent("ai_monitoring", {
+      stage: "tag_extraction_error",
+      listingId: listing.id,
+      model: MODEL,
+      promptVersion: PROMPT_VERSION,
+      durationMs: Date.now() - extractionStart,
+      error: err instanceof Error ? err.message : String(err),
+    });
     throw err;
   }
 }
@@ -660,7 +912,7 @@ export async function generatePreferenceQuizCopy(): Promise<PreferenceQuizCopy |
   const history = getSwipeHistory();
   const totalSwipes = history.liked.length + history.disliked.length;
 
-  if (!GROQ_API_KEY || totalSwipes < 3) {
+  if (!ANTHROPIC_API_KEY || totalSwipes < 3) {
     return null;
   }
 
@@ -734,7 +986,7 @@ Rules:
         content: `Create better quiz wording from this swipe history:
 ${historySummary}`,
       },
-    ], 2, 300);
+    ], 2, 512);
 
     const cleaned = result.replace(/```json?\n?/g, "").replace(/```/g, "").trim();
     const parsed = JSON.parse(cleaned) as Partial<PreferenceQuizCopy>;
@@ -783,6 +1035,21 @@ export async function generateMatchExplanation(listing: {
 }, tags: ListingTags): Promise<string> {
   const history = getSwipeHistory();
   const totalSwipes = history.liked.length + history.disliked.length;
+  const explanationStart = Date.now();
+  const fallbackExplanation = buildDeterministicExplanation(listing, tags);
+
+  void monitorEvent("ai_monitoring", {
+    stage: "explanation_start",
+    model: MODEL,
+    promptVersion: PROMPT_VERSION,
+    input: {
+      address: listing.address,
+      totalSwipes,
+      price: listing.price,
+      priceType: listing.priceType,
+      commuteCount: listing.commuteTimes.length,
+    },
+  });
 
   // Build a features string from the actual extracted tags
   const activeFeatures = Object.entries(tags)
@@ -796,9 +1063,23 @@ export async function generateMatchExplanation(listing: {
   if (totalSwipes < 3) {
     console.log(`[MatchExplain] Only ${totalSwipes} swipes — using tag-based explanation`);
     const highlights = [...activeFeatures, subwayInfo, buildingInfo, noiseInfo].filter(Boolean).slice(0, 3);
-    return highlights.length > 0
+    const coldExplanation = highlights.length > 0
       ? `${listing.beds}bd/${listing.baths}ba · ${highlights.join(", ")}`
       : `${listing.beds}bd/${listing.baths}ba in ${listing.neighborhood}`;
+    void monitorEvent("ai_monitoring", {
+      stage: "explanation_quality",
+      model: MODEL,
+      promptVersion: PROMPT_VERSION,
+      durationMs: Date.now() - explanationStart,
+      groundednessScore: 1,
+      hallucinationFlag: false,
+      constraintCompliance: true,
+      fallbackUsed: false,
+      output: {
+        explanation: coldExplanation,
+      },
+    });
+    return coldExplanation;
   }
 
   const likedFeatures = getLikedFeatures();
@@ -827,11 +1108,43 @@ Listing: ${listing.beds}bd/${listing.baths}ba at $${listing.price.toLocaleString
       },
     ], 3, 60);
 
-    console.log(`[MatchExplain] Result: "${result.trim()}"`);
-    return result.trim();
+    const explanation = result.trim();
+    const quality = evaluateExplanationQuality(explanation, listing, tags);
+    const shouldFallback =
+      quality.hallucinationFlag ||
+      !quality.constraintCompliance ||
+      quality.groundednessScore < 0.5;
+
+    void monitorEvent("ai_monitoring", {
+      stage: "explanation_quality",
+      model: MODEL,
+      promptVersion: PROMPT_VERSION,
+      durationMs: Date.now() - explanationStart,
+      groundednessScore: quality.groundednessScore,
+      hallucinationFlag: quality.hallucinationFlag,
+      constraintCompliance: quality.constraintCompliance,
+      fallbackUsed: shouldFallback,
+      output: {
+        explanation: shouldFallback ? fallbackExplanation : explanation,
+      },
+    });
+
+    console.log(`[MatchExplain] Result: "${explanation}"`);
+    return shouldFallback ? fallbackExplanation : explanation;
   } catch (err) {
     console.error(`[MatchExplain] Failed for ${listing.address}:`, err);
-    throw err;
+    void monitorEvent("ai_monitoring", {
+      stage: "explanation_error",
+      model: MODEL,
+      promptVersion: PROMPT_VERSION,
+      durationMs: Date.now() - explanationStart,
+      error: err instanceof Error ? err.message : String(err),
+      fallbackUsed: true,
+      output: {
+        explanation: fallbackExplanation,
+      },
+    });
+    return fallbackExplanation;
   }
 }
 
@@ -840,13 +1153,42 @@ export function computeMatchScore(
   tags: ListingTags,
   price: number = 0,
   priceType: "rent" | "buy" = "rent",
-  commuteTimes: { label: string; minutes: number }[] = []
+  commuteTimes: { label: string; minutes: number }[] = [],
+  context: {
+    listingId?: string;
+    address?: string;
+    reason?: "initial_enrichment" | "rescore" | "other";
+  } = {}
 ): number {
   const history = getSwipeHistory();
   const totalSwipes = history.liked.length + history.disliked.length;
+  const listingAvgCommute = commuteTimes.length > 0
+    ? commuteTimes.reduce((sum, c) => sum + c.minutes, 0) / commuteTimes.length
+    : 0;
+
   if (totalSwipes < 3) {
     const coldStart = computeColdStartScore(tags);
     console.log(`[MatchScore] Only ${totalSwipes} swipes — cold-start score ${coldStart}%`);
+    void monitorEvent("ai_monitoring", {
+      stage: "score_compute",
+      model: MODEL,
+      promptVersion: PROMPT_VERSION,
+      listingId: context.listingId,
+      address: context.address,
+      reason: context.reason || "other",
+      totalSwipes,
+      coldStart: true,
+      input: {
+        price,
+        priceType,
+        commuteCount: commuteTimes.length,
+        avgCommuteMinutes: Number(listingAvgCommute.toFixed(2)),
+        nearSubwayLinesCount: tags.near_subway_lines.length,
+      },
+      output: {
+        score: coldStart,
+      },
+    });
     return coldStart;
   }
 
@@ -1040,9 +1382,6 @@ export function computeMatchScore(
   // --- 5. Commute distance preference ---
   let commuteRatio = 0.5;
   let dislikedCommutePenalty = 0;
-  const listingAvgCommute = commuteTimes.length > 0
-    ? commuteTimes.reduce((sum, c) => sum + c.minutes, 0) / commuteTimes.length
-    : 0;
   const likedCommuteRange = getLikedCommuteRange();
   const dislikedCommuteRange = getDislikedCommuteRange();
 
@@ -1117,5 +1456,43 @@ export function computeMatchScore(
   console.log(
     `[MatchScore] features=${(featureRatio * 100).toFixed(0)}%, subway=${(subwayRatio * 100).toFixed(0)}%, price=${(priceRatio * 100).toFixed(0)}%, context=${(contextRatio * 100).toFixed(0)}%, commute=${(commuteRatio * 100).toFixed(0)}% | avoid(features=${(dislikedFeaturePenalty * 100).toFixed(0)}%, subway=${(dislikedSubwayPenalty * 100).toFixed(0)}%, price=${(dislikedPricePenalty * 100).toFixed(0)}%, context=${(dislikedContextPenalty * 100).toFixed(0)}%, commute=${(dislikedCommutePenalty * 100).toFixed(0)}%) → ${score}%`
   );
+  void monitorEvent("ai_monitoring", {
+    stage: "score_compute",
+    model: MODEL,
+    promptVersion: PROMPT_VERSION,
+    listingId: context.listingId,
+    address: context.address,
+    reason: context.reason || "other",
+    totalSwipes,
+    coldStart: false,
+    input: {
+      price,
+      priceType,
+      commuteCount: commuteTimes.length,
+      avgCommuteMinutes: Number(listingAvgCommute.toFixed(2)),
+      nearSubwayLinesCount: tags.near_subway_lines.length,
+      preferenceAnswers,
+    },
+    components: {
+      featureRatio: Number(featureRatio.toFixed(4)),
+      subwayRatio: Number(subwayRatio.toFixed(4)),
+      priceRatio: Number(priceRatio.toFixed(4)),
+      contextRatio: Number(contextRatio.toFixed(4)),
+      commuteRatio: Number(commuteRatio.toFixed(4)),
+      dislikedFeaturePenalty: Number(dislikedFeaturePenalty.toFixed(4)),
+      dislikedSubwayPenalty: Number(dislikedSubwayPenalty.toFixed(4)),
+      dislikedPricePenalty: Number(dislikedPricePenalty.toFixed(4)),
+      dislikedContextPenalty: Number(dislikedContextPenalty.toFixed(4)),
+      dislikedCommutePenalty: Number(dislikedCommutePenalty.toFixed(4)),
+      explicitBoost: Number(explicitBoost.toFixed(4)),
+      explicitPenalty: Number(explicitPenalty.toFixed(4)),
+      positiveWeighted: Number(positiveWeighted.toFixed(4)),
+      dislikePenalty: Number(dislikePenalty.toFixed(4)),
+      weighted: Number(weighted.toFixed(4)),
+    },
+    output: {
+      score,
+    },
+  });
   return score;
 }

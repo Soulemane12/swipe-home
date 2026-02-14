@@ -8,6 +8,7 @@ import {
   getLikedPriceRange,
 } from "./groq";
 import { calculateCommuteTimes, buildTradeoff } from "./commute";
+import { monitorEvent } from "./monitoring";
 
 const API_BASE = "https://api.rentcast.io/v1";
 const API_KEY = import.meta.env.VITE_RENTCAST_API_KEY;
@@ -405,6 +406,20 @@ export async function fetchPatternMatchedListings(
 
 // Enrich a single listing with AI tags, score, explanation, and real commute times
 export async function enrichListing(listing: Listing): Promise<Listing> {
+  const enrichmentStart = Date.now();
+  void monitorEvent("ai_monitoring", {
+    stage: "enrichment_start",
+    listingId: listing.id,
+    address: listing.address,
+    input: {
+      price: listing.price,
+      priceType: listing.priceType,
+      beds: listing.beds,
+      baths: listing.baths,
+      hasCoordinates: Boolean(listing.latitude && listing.longitude),
+    },
+  });
+
   try {
     // Calculate real commute times using Mapbox
     let commuteTimes = listing.commuteTimes;
@@ -420,15 +435,39 @@ export async function enrichListing(listing: Listing): Promise<Listing> {
     const enrichedListing = { ...listing, commuteTimes, tradeoff };
 
     const tags = await extractListingTags(enrichedListing);
-    const matchScore = computeMatchScore(tags, listing.price, listing.priceType, commuteTimes);
+    const matchScore = computeMatchScore(tags, listing.price, listing.priceType, commuteTimes, {
+      listingId: listing.id,
+      address: listing.address,
+      reason: "initial_enrichment",
+    });
     const matchExplanation = await generateMatchExplanation(enrichedListing, tags);
     const featureDescription = await fetchListingFeatures(listing.address) || undefined;
     const streetEasyUrl = await lookupStreetEasyUrl(listing.address);
     const nearSubwayLines = tags.near_subway_lines.length > 0 ? tags.near_subway_lines : undefined;
+    void monitorEvent("ai_monitoring", {
+      stage: "enrichment_success",
+      listingId: listing.id,
+      address: listing.address,
+      durationMs: Date.now() - enrichmentStart,
+      output: {
+        matchScore,
+        commuteCount: commuteTimes.length,
+        nearSubwayLinesCount: nearSubwayLines?.length || 0,
+        hasStreetEasyUrl: Boolean(streetEasyUrl),
+        hasFeatureDescription: Boolean(featureDescription),
+      },
+    });
     console.log(`[AI] Enriched: ${listing.address} → score=${matchScore}, commutes=[${commuteTimes.map(c => `${c.label}:${c.minutes}min`).join(", ")}]${nearSubwayLines ? `, subway=[${nearSubwayLines.join(",")}]` : ""}`);
     return { ...enrichedListing, matchScore, matchExplanation, featureDescription, streetEasyUrl, nearSubwayLines };
   } catch (err) {
     console.error(`[AI] Failed to enrich ${listing.address}:`, err);
+    void monitorEvent("ai_monitoring", {
+      stage: "enrichment_error",
+      listingId: listing.id,
+      address: listing.address,
+      durationMs: Date.now() - enrichmentStart,
+      error: err instanceof Error ? err.message : String(err),
+    });
     return listing;
   }
 }

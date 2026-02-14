@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import SavedPlaceForm from "@/components/SavedPlaceForm";
 import ModeToggle from "@/components/ModeToggle";
-import { Home, ArrowRight } from "lucide-react";
+import { Home, ArrowRight, Trash2 } from "lucide-react";
 import type { CommuteMode } from "@/data/listingTypes";
 
 interface Place {
@@ -53,12 +53,34 @@ const Onboarding = () => {
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
       <div className="w-full max-w-md animate-fade-in">
-        {/* Logo */}
-        <div className="flex items-center justify-center gap-2 mb-8">
-          <div className="w-10 h-10 rounded-2xl bg-primary flex items-center justify-center">
-            <Home className="w-5 h-5 text-primary-foreground" />
+        {/* Logo + Clear */}
+        <div className="flex items-center justify-between mb-8">
+          <div className="w-8" />
+          <div className="flex items-center gap-2">
+            <div className="w-10 h-10 rounded-2xl bg-primary flex items-center justify-center">
+              <Home className="w-5 h-5 text-primary-foreground" />
+            </div>
+            <span className="text-xl font-bold text-foreground">HomeSwipe</span>
           </div>
-          <span className="text-xl font-bold text-foreground">HomeSwipe</span>
+          <button
+            type="button"
+            onClick={() => {
+              localStorage.clear();
+              setPlaces([
+                { id: "1", label: "School", address: "645 W 130th St, New York, NY 10027", importance: "high" },
+                { id: "2", label: "Gym", address: "1250 E 229th St, Bronx, NY 10466", importance: "medium" },
+              ]);
+              setStep(1);
+              setPriceType("rent");
+              setBedrooms(undefined);
+              setBathrooms(undefined);
+              setCommuteModes(["transit"]);
+            }}
+            className="w-8 h-8 rounded-full flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+            title="Clear all saved data"
+          >
+            <Trash2 className="w-4 h-4" />
+          </button>
         </div>
 
         {/* Progress */}

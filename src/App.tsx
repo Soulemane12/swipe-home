@@ -7,6 +7,7 @@ import Onboarding from "./pages/Onboarding";
 import Landing from "./pages/Landing";
 import SwipeFeed from "./pages/SwipeFeed";
 import SavedHomes from "./pages/SavedHomes";
+import Monitor from "./pages/Monitor";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -23,6 +24,7 @@ const App = () => (
           <Route path="/filter" element={<Onboarding />} />
           <Route path="/swipe" element={<SwipeFeed />} />
           <Route path="/saved" element={<SavedHomes />} />
+          <Route path="/monitor" element={<Monitor />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>

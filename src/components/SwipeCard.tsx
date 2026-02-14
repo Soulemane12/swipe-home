@@ -5,6 +5,7 @@ import CommuteChip from "./CommuteChip";
 import TradeoffBanner from "./TradeoffBanner";
 import MatchExplanation from "./MatchExplanation";
 import type { Listing } from "@/data/listingTypes";
+import type { FeedbackLabel } from "@/services/monitoring";
 
 // NYC subway line colors
 const SUBWAY_COLORS: Record<string, string> = {
@@ -23,11 +24,20 @@ const SUBWAY_COLORS: Record<string, string> = {
 interface SwipeCardProps {
   listing: Listing;
   onSwipe: (direction: "left" | "right") => void;
+  onFeedback?: (listing: Listing, label: FeedbackLabel) => void;
+  onExplanationToggle?: (open: boolean) => void;
   isTop: boolean;
   showSubwayLines?: boolean;
 }
 
-const SwipeCard = ({ listing, onSwipe, isTop, showSubwayLines }: SwipeCardProps) => {
+const SwipeCard = ({
+  listing,
+  onSwipe,
+  onFeedback,
+  onExplanationToggle,
+  isTop,
+  showSubwayLines,
+}: SwipeCardProps) => {
   const [scope, animate] = useAnimate();
   const [imageFailed, setImageFailed] = useState(false);
   const x = useMotionValue(0);
@@ -53,7 +63,8 @@ const SwipeCard = ({ listing, onSwipe, isTop, showSubwayLines }: SwipeCardProps)
 
   useEffect(() => {
     setImageFailed(false);
-  }, [listing.id, listing.image]);
+    onExplanationToggle?.(false);
+  }, [listing.id, listing.image, onExplanationToggle]);
 
   const hasImage = Boolean(listing.image) && !imageFailed;
   const displayPrice = listing.price > 0 ? `$${listing.price.toLocaleString()}` : "Price unavailable";
@@ -166,7 +177,11 @@ const SwipeCard = ({ listing, onSwipe, isTop, showSubwayLines }: SwipeCardProps)
           <TradeoffBanner text={displayTradeoff} />
 
           {/* Match explanation */}
-          <MatchExplanation text={displayExplanation} />
+          <MatchExplanation
+            text={displayExplanation}
+            onFeedback={onFeedback ? (label) => onFeedback(listing, label) : undefined}
+            onToggle={onExplanationToggle}
+          />
 
           {/* StreetEasy link */}
           {listing.streetEasyUrl && (

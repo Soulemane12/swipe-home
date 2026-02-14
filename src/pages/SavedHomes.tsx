@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { Home, ArrowLeft, ArrowUpDown } from "lucide-react";
 import mapboxgl from "mapbox-gl";
@@ -74,9 +74,45 @@ const SavedHomes = () => {
   const [listings, setListings] = useState<Listing[]>([]);
   const [sortBy, setSortBy] = useState<SortBy>("match");
   const [geocodedPlaces, setGeocodedPlaces] = useState<GeocodedPlace[]>([]);
+  const [focusedPlaceId, setFocusedPlaceId] = useState<string | null>(null);
+  const [focusedListingId, setFocusedListingId] = useState<string | null>(null);
   const mapContainer = useRef<HTMLDivElement>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
   const markersRef = useRef<mapboxgl.Marker[]>([]);
+  const placeMarkersRef = useRef<Map<string, mapboxgl.Marker>>(new Map());
+  const listingMarkersRef = useRef<Map<string, mapboxgl.Marker>>(new Map());
+
+  const focusOnMapPoint = useCallback((longitude: number, latitude: number, zoom = 14) => {
+    const map = mapRef.current;
+    if (!map) return;
+    map.flyTo({
+      center: [longitude, latitude],
+      zoom,
+      essential: true,
+      duration: 650,
+    });
+  }, []);
+
+  const focusOnPlace = useCallback((place: GeocodedPlace) => {
+    const map = mapRef.current;
+    if (!map) return;
+    setFocusedPlaceId(place.id);
+    setFocusedListingId(null);
+    focusOnMapPoint(place.longitude, place.latitude, 14.5);
+    const marker = placeMarkersRef.current.get(place.id);
+    marker?.getPopup()?.addTo(map);
+  }, [focusOnMapPoint]);
+
+  const focusOnListing = useCallback((listing: Listing) => {
+    if (!listing.longitude || !listing.latitude) return;
+    const map = mapRef.current;
+    if (!map) return;
+    setFocusedListingId(listing.id);
+    setFocusedPlaceId(null);
+    focusOnMapPoint(listing.longitude, listing.latitude, 15);
+    const marker = listingMarkersRef.current.get(listing.id);
+    marker?.getPopup()?.addTo(map);
+  }, [focusOnMapPoint]);
 
   useEffect(() => {
     const stored = localStorage.getItem("savedListings");
@@ -104,6 +140,18 @@ const SavedHomes = () => {
     }
   }, []);
 
+  useEffect(() => {
+    if (focusedPlaceId && !geocodedPlaces.some((place) => place.id === focusedPlaceId)) {
+      setFocusedPlaceId(null);
+    }
+  }, [focusedPlaceId, geocodedPlaces]);
+
+  useEffect(() => {
+    if (focusedListingId && !listings.some((listing) => listing.id === focusedListingId)) {
+      setFocusedListingId(null);
+    }
+  }, [focusedListingId, listings]);
+
   // Initialize and update map
   useEffect(() => {
     if (!mapContainer.current) return;
@@ -115,6 +163,8 @@ const SavedHomes = () => {
       mapRef.current = null;
     }
     markersRef.current = [];
+    placeMarkersRef.current.clear();
+    listingMarkersRef.current.clear();
 
     const map = new mapboxgl.Map({
       container: mapContainer.current,
@@ -165,6 +215,7 @@ const SavedHomes = () => {
           .addTo(map);
 
         markersRef.current.push(marker);
+        listingMarkersRef.current.set(listing.id, marker);
         bounds.extend([listing.longitude, listing.latitude]);
       });
 
@@ -204,6 +255,7 @@ const SavedHomes = () => {
           .addTo(map);
 
         markersRef.current.push(marker);
+        placeMarkersRef.current.set(place.id, marker);
         bounds.extend([place.longitude, place.latitude]);
       });
 
@@ -215,6 +267,8 @@ const SavedHomes = () => {
     return () => {
       markersRef.current.forEach((m) => m.remove());
       markersRef.current = [];
+      placeMarkersRef.current.clear();
+      listingMarkersRef.current.clear();
       if (mapRef.current) {
         mapRef.current.remove();
         mapRef.current = null;
@@ -292,6 +346,23 @@ const SavedHomes = () => {
                   </button>
                 ))}
               </div>
+              {geocodedPlaces.length > 0 && (
+                <div className="mt-2 flex items-center gap-1.5 overflow-x-auto pb-0.5">
+                  {geocodedPlaces.map((place) => (
+                    <button
+                      key={place.id}
+                      onClick={() => focusOnPlace(place)}
+                      className={`px-2.5 py-1 rounded-lg text-[11px] font-medium whitespace-nowrap transition-all ${
+                        focusedPlaceId === place.id
+                          ? "bg-primary text-primary-foreground"
+                          : "bg-secondary text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      {(PLACE_ICONS[place.label] || "\uD83D\uDCCD")} {place.label}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* Scrollable cards */}
@@ -300,7 +371,12 @@ const SavedHomes = () => {
                 {sorted.map((listing) => (
                   <div
                     key={listing.id}
-                    className="flex gap-3 p-2.5 rounded-xl bg-background/80 border border-border animate-fade-in"
+                    onClick={() => focusOnListing(listing)}
+                    className={`flex gap-3 p-2.5 rounded-xl bg-background/80 border animate-fade-in transition-all ${
+                      listing.latitude && listing.longitude
+                        ? "cursor-pointer hover:border-primary/40"
+                        : "cursor-default border-border"
+                    } ${focusedListingId === listing.id ? "border-primary/60 ring-2 ring-primary/20" : "border-border"}`}
                   >
                     <SavedHomeThumb image={listing.image} alt={listing.neighborhood} />
                     <div className="flex-1 min-w-0">
